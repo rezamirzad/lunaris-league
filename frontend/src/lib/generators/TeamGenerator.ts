@@ -1,6 +1,10 @@
 import { Team, TeamTactics } from "@/app/models";
 import { TEAM_NAME_DICTIONARY } from "../dictionaries/teamNameData";
 import { TACTICAL_ARCHETYPES } from "../dictionaries/tacticalData";
+import {
+  TIER_ELO_MAP,
+  NATION_ELO_MODIFIER,
+} from "../dictionaries/leagueTierData";
 
 export class TeamGenerator {
   /**
@@ -75,15 +79,35 @@ export class TeamGenerator {
   /**
    * Main entry point to generate a complete Team object
    */
-  static generate(league_id: string, nationality_id: string): Team {
+  static generate(
+    league_id: string,
+    nationality_id: string,
+    tier: number,
+  ): Team {
     const name = this.generateLocalizedName(nationality_id);
     const tactics = this.generateUniqueTactic();
+
+    // 1. Get Base Config for the Tier
+    const baseConfig = TIER_ELO_MAP[tier] || TIER_ELO_MAP[5];
+
+    // 2. Get National Modifier
+    const modifier =
+      NATION_ELO_MODIFIER[nationality_id] || NATION_ELO_MODIFIER.DEFAULT;
+
+    // 3. Calculate Modified Range
+    const minElo = Math.floor(baseConfig.min * modifier);
+    const maxElo = Math.floor(baseConfig.max * modifier);
+
+    // 4. Final Randomization
+    const elo_rating = Math.floor(
+      Math.random() * (maxElo - minElo + 1) + minElo,
+    );
 
     return {
       id: `t_${Math.random().toString(36).substring(2, 9)}`,
       name,
       league_id,
-      elo_rating: 1200 + (Math.floor(Math.random() * 200) - 100),
+      elo_rating,
       tactics,
       nationality_id,
     };

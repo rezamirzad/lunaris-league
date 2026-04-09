@@ -10,10 +10,12 @@ export const LeagueTableCard = ({
   data,
   title,
   seasonStats,
+  seasonId, // 1. Added seasonId prop
 }: {
   data: LeagueTableEntry[];
   title?: string;
   seasonStats: any;
+  seasonId: string; // 2. Typed seasonId
 }) => {
   const [selectedTeamResults, setSelectedTeamResults] = useState<{
     name: string;
@@ -22,7 +24,8 @@ export const LeagueTableCard = ({
   const isSidebarOpen = !!selectedTeamResults;
 
   const handleTeamClick = async (teamId: string, teamName: string) => {
-    const matches = await getTeamMatchesAction(teamId, "s_2526");
+    // 3. Replaced hardcoded string with the prop
+    const matches = await getTeamMatchesAction(teamId, seasonId);
     setSelectedTeamResults({ name: teamName, matches });
   };
 
