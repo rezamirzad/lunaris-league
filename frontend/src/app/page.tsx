@@ -1,340 +1,117 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link"; // Ensure Link is imported
 import {
-  checkDb,
-  createRegenAction,
-  createTeamAction,
-  getSquadAction,
   getNationalitiesAction,
   getLeaguesByNationAction,
-  getTeamsByLeagueAction,
-  getTeamLookupAction,
   getLeagueTableAction,
-  getSeasonStatsAction, // - Ensure this is imported
+  getSeasonStatsAction,
 } from "./actions/dbActions";
-import { PlayerCard } from "./components/PlayerCard";
-import { Player, Team, LeagueTableEntry } from "./models";
-import { FIFA_NATIONS } from "@/lib/dictionaries/nationNameData";
+import { LeagueTableEntry } from "./models";
 import { LeagueTableCard } from "./components/LeagueTableCard";
 
 export default function Home() {
-  const [dbStatus, setDbStatus] = useState<string | null>(null);
-  const [squad, setSquad] = useState<Player[]>([]);
-  const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [leagueTable, setLeagueTable] = useState<LeagueTableEntry[]>([]);
-
-  // NEW: State to store Wikipedia-style season statistics
   const [seasonStats, setSeasonStats] = useState<any>(null);
-
   const [nations, setNations] = useState<string[]>([]);
   const [leagues, setLeagues] = useState<{ id: string; name: string }[]>([]);
-  const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
-
   const [selectedNation, setSelectedNation] = useState("");
   const [selectedLeague, setSelectedLeague] = useState("");
-  const [selectedTeamId, setSelectedTeamId] = useState("");
-  const [teamLookup, setTeamLookup] = useState<
-    Record<string, { name: string; nation: string }>
-  >({});
-
-  const [playerNation, setPlayerNation] = useState("ENG");
 
   useEffect(() => {
-    refreshSquad();
-    loadNations();
+    getNationalitiesAction().then(setNations);
   }, []);
 
   useEffect(() => {
     if (selectedNation) {
-      setPlayerNation(selectedNation);
-    }
-  }, [selectedNation]);
-
-  const loadNations = async () => {
-    const data = await getNationalitiesAction(); //
-    setNations(data);
-  };
-
-  useEffect(() => {
-    if (selectedNation) {
       getLeaguesByNationAction(selectedNation).then((data) => {
-        //
         setLeagues(data);
         setSelectedLeague("");
-        setTeams([]);
-        setSelectedTeamId("");
         setLeagueTable([]);
-        setSeasonStats(null); // Clear stats when changing nations
+        setSeasonStats(null);
       });
-    } else {
-      setLeagues([]);
     }
   }, [selectedNation]);
 
-  useEffect(() => {
-    if (selectedLeague) {
-      getTeamsByLeagueAction(selectedLeague).then((data) => {
-        //
-        setTeams(data);
-        setSelectedTeamId("");
-        setLeagueTable([]);
-        setSeasonStats(null); // Clear stats when changing leagues
-      });
-    } else {
-      setTeams([]);
-    }
-  }, [selectedLeague]);
-
-  const refreshSquad = async () => {
-    try {
-      const [playerData, lookupData] = await Promise.all([
-        getSquadAction(), //
-        getTeamLookupAction(), //
-      ]);
-      setSquad(playerData ?? []);
-      setTeamLookup(lookupData || {});
-    } catch (error) {
-      console.error("Failed to refresh squad:", error);
-      setDbStatus("Database connection failed.");
-    }
-  };
-
-  // UPDATED: Fetches both the table and the season summary stats
   const handleFetchTable = async () => {
-    if (!selectedLeague) {
-      setDbStatus("Please select a league first");
-      return;
-    }
-    setDbStatus("Loading Standings & Stats...");
-
-    try {
-      // Fetch both in parallel to improve performance
-      const [tableData, statsData] = await Promise.all([
-        getLeagueTableAction(selectedLeague, "s_2526"), //
-        getSeasonStatsAction(selectedLeague, "s_2526"), //
-      ]);
-
-      setLeagueTable(tableData);
-      setSeasonStats(statsData);
-      setDbStatus(null);
-    } catch (error) {
-      console.error("Fetch Error:", error);
-      setDbStatus("Error loading league data.");
-    }
-  };
-
-  const handleGenerate = async () => {
-    if (!playerNation || !selectedTeamId) return;
-    setDbStatus("Generating...");
-    const result = await createRegenAction(playerNation, selectedTeamId); //
-
-    if (result.success) {
-      setDbStatus(`Generated: ${result.player?.name}`);
-      refreshSquad();
-    }
-  };
-
-  const handleGenerateTeam = async () => {
-    setDbStatus("Generating Team...");
-    const result = await createTeamAction(); //
-    if (result.success) {
-      setDbStatus(`Generated Team: ${result.team?.name}`);
-      loadNations();
-    }
+    if (!selectedLeague) return;
+    const [tableData, statsData] = await Promise.all([
+      getLeagueTableAction(selectedLeague, "s_2526"),
+      getSeasonStatsAction(selectedLeague, "s_2526"),
+    ]);
+    setLeagueTable(tableData);
+    setSeasonStats(statsData);
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen py-10 bg-black text-white font-sans">
-      <main className="w-full max-w-6xl px-10 text-center">
-        <h1 className="text-6xl font-bold mb-10 tracking-tighter text-teal-500">
-          Lunaris League
-        </h1>
+    <div className="min-h-screen bg-black text-white font-sans">
+      <header className="border-b border-gray-800 bg-gray-900/20 sticky top-0 z-[100] backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+          <h1 className="text-2xl font-black tracking-tighter text-teal-500 italic">
+            LUNARIS LEAGUE
+          </h1>
 
-        {/* CONTROLS SECTION */}
-        <div className="flex flex-col gap-6 mb-10 bg-gray-900/40 p-8 rounded-3xl border border-gray-800 shadow-2xl">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 text-left">
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-gray-500 tracking-widest uppercase">
-                Team Nation
-              </label>
-              <select
-                value={selectedNation}
-                onChange={(e) => setSelectedNation(e.target.value)}
-                className="w-full bg-black border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:border-teal-500 outline-none transition cursor-pointer"
-              >
-                <option value="">Select Nation</option>
-                {nations.map((n: string) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-gray-500 tracking-widest uppercase">
-                League
-              </label>
-              <select
-                disabled={!selectedNation}
-                value={selectedLeague}
-                onChange={(e) => setSelectedLeague(e.target.value)}
-                className="w-full bg-black border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:border-teal-500 outline-none transition disabled:opacity-30 cursor-pointer"
-              >
-                <option value="">Select League</option>
-                {leagues.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-gray-500 tracking-widest uppercase">
-                Target Team
-              </label>
-              <select
-                disabled={!selectedLeague}
-                value={selectedTeamId}
-                onChange={(e) => setSelectedTeamId(e.target.value)}
-                className="w-full bg-black border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:border-teal-500 outline-none transition disabled:opacity-30 cursor-pointer"
-              >
-                <option value="">Select Team</option>
-                {teams.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-teal-400 tracking-widest uppercase">
-                Player Nationality
-              </label>
-              <select
-                value={playerNation}
-                onChange={(e) => setPlayerNation(e.target.value)}
-                className="w-full bg-black border border-teal-900/50 rounded-xl px-4 py-2.5 text-sm focus:border-teal-400 outline-none transition shadow-[0_0_15px_rgba(20,184,166,0.1)] cursor-pointer"
-              >
-                {FIFA_NATIONS.map((code: string) => (
-                  <option key={code} value={code}>
-                    {code}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="flex justify-center flex-wrap gap-4 mt-2">
-            <button
-              disabled={!selectedTeamId}
-              onClick={handleGenerate}
-              className="bg-teal-600 hover:bg-teal-500 px-8 py-3 rounded-full font-bold transition shadow-lg shadow-teal-900/20 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed"
+          <div className="flex gap-4 items-center">
+            {/* ... selectors remain same ... */}
+            <select
+              value={selectedNation}
+              onChange={(e) => setSelectedNation(e.target.value)}
+              className="bg-black border border-gray-700 rounded-lg px-3 py-1.5 text-xs"
             >
-              + Generate Player
-            </button>
+              <option value="">Nation</option>
+              {nations.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <select
+              disabled={!selectedNation}
+              value={selectedLeague}
+              onChange={(e) => setSelectedLeague(e.target.value)}
+              className="bg-black border border-gray-700 rounded-lg px-3 py-1.5 text-xs"
+            >
+              <option value="">League</option>
+              {leagues.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
 
             <button
-              disabled={!selectedLeague}
               onClick={handleFetchTable}
-              className="bg-gray-800 hover:bg-gray-700 border border-gray-700 px-8 py-3 rounded-full font-bold transition shadow-lg disabled:opacity-30"
+              className="bg-teal-600 px-4 py-1.5 rounded-lg text-xs font-bold"
             >
-              📊 View Standings
+              Load
             </button>
 
-            <button
-              onClick={handleGenerateTeam}
-              className="bg-blue-600 hover:bg-blue-500 px-8 py-3 rounded-full font-bold transition shadow-lg shadow-blue-900/20"
+            <div className="w-px h-6 bg-gray-800 mx-2" />
+
+            {/* CRITICAL: Link to Admin */}
+            <Link
+              href="/admin"
+              className="text-[10px] font-black text-gray-500 hover:text-teal-400 uppercase tracking-widest transition"
             >
-              + Generate Team
-            </button>
+              Admin
+            </Link>
           </div>
         </div>
+      </header>
 
-        {/* LEAGUE TABLE & SEASON STATS DISPLAY */}
-        {leagueTable.length > 0 && seasonStats && (
-          <div className="mb-10 animate-in fade-in slide-in-from-top-4 duration-500 relative w-full flex flex-col items-center">
-            <div className="w-full max-w-4xl flex justify-start mb-2">
-              <button
-                onClick={() => {
-                  setLeagueTable([]);
-                  setSeasonStats(null);
-                }}
-                className="text-gray-500 hover:text-red-500 transition p-2 text-xs flex items-center gap-1"
-              >
-                ✕ Hide Standings
-              </button>
-            </div>
-
-            <LeagueTableCard
-              data={leagueTable}
-              seasonStats={seasonStats}
-              title={`${leagues.find((l) => l.id === selectedLeague)?.name} Standings`}
-            />
+      <main className="max-w-7xl mx-auto p-6">
+        {leagueTable.length > 0 && seasonStats ? (
+          <LeagueTableCard
+            data={leagueTable}
+            seasonStats={seasonStats}
+            title="League Standings"
+          />
+        ) : (
+          <div className="h-[70vh] flex flex-col items-center justify-center text-gray-700 uppercase font-bold tracking-widest text-xs">
+            Select competition to begin
           </div>
         )}
-
-        {/* STATUS & DIAGNOSTICS */}
-        <div className="flex flex-col items-center gap-4 mb-10">
-          <button
-            onClick={async () => {
-              const res = await checkDb(); //
-              setDbStatus(`Database Connected: ${res.count} players`);
-            }}
-            className="text-xs text-gray-500 hover:text-gray-300 underline underline-offset-4 transition"
-          >
-            Run Database Diagnostic
-          </button>
-          {dbStatus && (
-            <p className="text-teal-400 font-mono text-sm animate-pulse tracking-tight">
-              {dbStatus}
-            </p>
-          )}
-        </div>
-
-        {/* TEAM FOCUS VIEW */}
-        {selectedTeam && (
-          <div className="mb-10 p-8 bg-gray-900 border-l-4 border-teal-500 rounded-2xl text-left animate-in fade-in slide-in-from-bottom-4 duration-500 shadow-2xl">
-            <div className="flex justify-between items-start">
-              <div>
-                <h2 className="text-4xl font-black text-white italic tracking-tighter uppercase">
-                  {selectedTeam.name}
-                </h2>
-                <div className="flex gap-3 mt-2">
-                  <span className="bg-teal-900/50 text-teal-300 text-[10px] px-2 py-0.5 rounded font-bold uppercase border border-teal-800">
-                    {selectedTeam.tactics.formation}
-                  </span>
-                  <span className="bg-gray-800 text-gray-400 text-[10px] px-2 py-0.5 rounded font-bold uppercase border border-gray-700">
-                    {selectedTeam.tactics.style || "Standard"}
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setSelectedTeam(null);
-                  refreshSquad();
-                }}
-                className="bg-gray-800 hover:bg-red-900/40 text-gray-500 hover:text-red-400 w-8 h-8 rounded-full flex items-center justify-center transition"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* SQUAD LIST */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 text-left">
-          {squad.map((player) => (
-            <PlayerCard
-              player={player}
-              key={player.id}
-              teamDetails={teamLookup[player.teamId]}
-            />
-          ))}
-        </div>
       </main>
     </div>
   );
