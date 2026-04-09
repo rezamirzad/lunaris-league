@@ -244,12 +244,22 @@ export default function AdminPage() {
             Squad & Database Architect
           </p>
         </div>
-        <Link
-          href="/"
-          className="flex items-center gap-2 text-[10px] font-black text-gray-500 hover:text-white uppercase tracking-widest transition"
-        >
-          <span className="text-teal-500">←</span> Return Home
-        </Link>
+
+        <div className="flex items-center gap-6">
+          <Link
+            href="/match-center"
+            className="text-[10px] font-black text-gray-500 hover:text-teal-400 uppercase tracking-widest transition"
+          >
+            Match Center
+          </Link>
+
+          <Link
+            href="/"
+            className="flex items-center gap-2 text-[10px] font-black text-gray-500 hover:text-white uppercase tracking-widest transition"
+          >
+            <span className="text-teal-500">←</span> Return Home
+          </Link>
+        </div>
       </header>
 
       <main className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-12">

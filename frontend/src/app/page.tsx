@@ -129,6 +129,16 @@ export default function Home() {
               Load
             </button>
 
+            <div className="w-px h-6 bg-gray-800 mx-2" />
+
+            {/* MATCH CENTER LINK */}
+            <Link
+              href="/match-center"
+              className="text-[10px] font-black text-teal-500 hover:text-white uppercase tracking-widest transition border border-teal-500/20 px-3 py-1.5 rounded-lg hover:bg-teal-500/10"
+            >
+              Match Center
+            </Link>
+
             {/* NEW ADMIN BUTTON */}
             <div className="w-px h-6 bg-gray-800 mx-2" />
             <Link
