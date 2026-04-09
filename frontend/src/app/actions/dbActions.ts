@@ -319,43 +319,8 @@ export async function generatePlayersForTeamAction(
   }
 }
 
-export async function savePlayersAction(players: Player[]) {
-  const db = new Database(dbPath);
-  try {
-    const insert = db.prepare(`
-      INSERT INTO players (id, name, age, position, overall, teamId, nationality_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const transaction = db.transaction((playerList) => {
-      for (const p of playerList) {
-        insert.run(
-          p.id,
-          p.name,
-          p.age,
-          p.position,
-          p.overall,
-          p.teamId,
-          p.nationality_id,
-        );
-      }
-    });
-
-    transaction(players);
-    return {
-      success: true,
-      message: `Successfully saved ${players.length} players.`,
-    };
-  } catch (e) {
-    return { success: false, error: "Failed to save players." };
-  } finally {
-    db.close();
-  }
-}
-
-// frontend/src/app/actions/dbActions.ts
-
-export async function saveSquadAction(players: any[]) {
+export async function savePlayersAction(players: any[]) {
+  // Changed type to any[] for flexibility
   const db = new Database(dbPath);
   try {
     const insert = db.prepare(`
@@ -365,14 +330,15 @@ export async function saveSquadAction(players: any[]) {
 
     const transaction = db.transaction((playerList) => {
       for (const p of playerList) {
+        console.log("Saving player:", p.name, "with team_id:", p.team_id);
         insert.run(
           p.id,
           p.name,
           p.age,
           p.position,
-          p.ovr,
-          p.team_id, // Use the property name from your PlayerGenerator
-          p.nationality_id, // Use the property name from your PlayerGenerator
+          p.ovr || p.overall, // Handle both possible property names
+          p.team_id || p.teamId, // FIX: Handle the snake_case team_id
+          p.nationality_id,
           JSON.stringify(p.attributes || {}),
         );
       }
@@ -384,8 +350,57 @@ export async function saveSquadAction(players: any[]) {
       message: `Successfully saved ${players.length} players.`,
     };
   } catch (e) {
-    console.error("❌ Database Error:", e);
-    return { success: false, error: "Database write failed." };
+    console.error("❌ savePlayersAction Error:", e);
+    return { success: false, error: "Failed to save players." };
+  } finally {
+    db.close();
+  }
+}
+
+export async function saveSquadAction(players: any[]) {
+  if (!players || players.length === 0) {
+    console.log("⚠️ Warning: Received empty player array");
+    return { success: false, error: "No players provided" };
+  }
+
+  const db = new Database(dbPath);
+  try {
+    const insert = db.prepare(`
+      INSERT INTO players (id, name, age, position, ovr, teamId, nationality_id, attributes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const transaction = db.transaction((playerList) => {
+      for (const p of playerList) {
+        // Validation check before running the SQL
+        const tId = p.team_id || p.teamId;
+
+        if (!tId) {
+          throw new Error(
+            `NOT NULL constraint prevention: teamId is missing for ${p.name}`,
+          );
+        }
+
+        insert.run(
+          p.id,
+          p.name,
+          p.age,
+          p.position,
+          p.ovr || p.overall || 0,
+          tId,
+          p.nationality_id,
+          JSON.stringify(p.attributes || {}),
+        );
+      }
+    });
+
+    transaction(players);
+    return {
+      success: true,
+      message: `Successfully saved ${players.length} players.`,
+    };
+  } catch (e: any) {
+    return { success: false, error: e.message || "Database write failed." };
   } finally {
     db.close();
   }

@@ -25,7 +25,7 @@ export default function Home() {
   const [seasonStats, setSeasonStats] = useState<any>(null);
 
   const selectedLeagueName =
-    leagues.find((l) => l.id === selectedLeague)?.name || "";
+    leagues.find((l) => l.id === selectedLeague)?.name || "Unknown League";
 
   const formatSeasonDisplay = (sId: string) => {
     if (!sId || sId.length < 6) return sId;
@@ -128,6 +128,15 @@ export default function Home() {
             >
               Load
             </button>
+
+            {/* NEW ADMIN BUTTON */}
+            <div className="w-px h-6 bg-gray-800 mx-2" />
+            <Link
+              href="/admin"
+              className="text-[10px] font-black text-gray-500 hover:text-teal-400 uppercase tracking-widest transition"
+            >
+              Admin
+            </Link>
           </div>
         </div>
       </header>
