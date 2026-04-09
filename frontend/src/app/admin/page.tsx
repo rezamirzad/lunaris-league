@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   getNationalitiesAction,
   getLeaguesByNationAction,
@@ -8,8 +8,14 @@ import {
   saveTeamAction,
   getLeagueLimitAction,
   deleteAllTeamsAction,
+  getTeamsByLeagueAction,
+  saveSquadAction,
+  getTeamSquadSizeAction,
 } from "../actions/dbActions";
-import { Team } from "../models";
+import { PlayerGenerator } from "@/lib/generators/PlayerGenerator";
+import { Team, Player, PlayerPosition } from "../models";
+
+type SortKey = keyof Player | "pac" | "sho" | "pas" | "dri" | "def" | "phy";
 
 export default function AdminPage() {
   const [nations, setNations] = useState<string[]>([]);
@@ -23,7 +29,20 @@ export default function AdminPage() {
     max: number;
     isFull: boolean;
   } | null>(null);
+
   const [previewTeam, setPreviewTeam] = useState<Team | null>(null);
+  const [teamsInLeague, setTeamsInLeague] = useState<any[]>([]);
+  const [selectedTeam, setSelectedTeam] = useState<any>(null);
+  const [previewSquad, setPreviewSquad] = useState<Player[]>([]);
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<string>>(
+    new Set(),
+  );
+
+  // Sorting & Size State
+  const [sortKey, setSortKey] = useState<SortKey>("ovr");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [currentSquadSize, setCurrentSquadSize] = useState<number>(0);
+
   const [isPending, setIsPending] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
@@ -39,295 +58,432 @@ export default function AdminPage() {
       getLeaguesByNationAction(selectedNation).then(setLeagues);
       setSelectedLeague("");
       setLeagueStatus(null);
-      setPreviewTeam(null);
+      setPreviewSquad([]);
     }
   }, [selectedNation]);
 
   useEffect(() => {
     if (selectedLeague) {
       getLeagueLimitAction(selectedLeague).then(setLeagueStatus);
+      getTeamsByLeagueAction(selectedLeague).then(setTeamsInLeague);
       setPreviewTeam(null);
     }
   }, [selectedLeague]);
 
-  const handleGenerate = async () => {
-    if (!selectedLeague || leagueStatus?.isFull) return;
-    setIsPending(true);
-    setMessage(null);
-    try {
-      const result = await generateTeamPreviewAction(
-        selectedLeague,
-        selectedNation,
+  useEffect(() => {
+    if (selectedTeam) {
+      getTeamSquadSizeAction(selectedTeam.id).then(setCurrentSquadSize);
+    } else {
+      setCurrentSquadSize(0);
+    }
+  }, [selectedTeam]);
+
+  // Sorting logic
+  const sortedSquad = useMemo(() => {
+    return [...previewSquad].sort((a, b) => {
+      let valA: any, valB: any;
+      const attributeKeys = ["pac", "sho", "pas", "dri", "def", "phy"];
+      if (attributeKeys.includes(sortKey as string)) {
+        valA = (a as any).attributes?.[sortKey] ?? 0;
+        valB = (b as any).attributes?.[sortKey] ?? 0;
+      } else {
+        valA = a[sortKey as keyof Player];
+        valB = b[sortKey as keyof Player];
+      }
+      if (valA < valB) return sortOrder === "asc" ? -1 : 1;
+      if (valA > valB) return sortOrder === "asc" ? 1 : -1;
+      return 0;
+    });
+  }, [previewSquad, sortKey, sortOrder]);
+
+  // Nationality Summary logic
+  const nationalitySummary = useMemo(() => {
+    const counts: Record<string, number> = {};
+    previewSquad.forEach((p) => {
+      counts[p.nationality_id] = (counts[p.nationality_id] || 0) + 1;
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [previewSquad]);
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortOrder("desc");
+    }
+  };
+
+  const handleGenerateSquad = () => {
+    if (!selectedTeam) return;
+    if (currentSquadSize >= 35) {
+      const proceed = confirm(
+        `Warning: ${selectedTeam.name} already has ${currentSquadSize} players. Continue?`,
       );
-      if (result.success) {
-        setPreviewTeam(result.team!);
-      } else {
-        setMessage({
-          type: "error",
-          text: result.error ?? "Generation failed",
-        });
-      }
-    } finally {
-      setIsPending(false);
+      if (!proceed) return;
     }
+    const leagueTier = leagues.find((l) => l.id === selectedLeague)?.tier || 4;
+    const squad = PlayerGenerator.generateSquad(
+      selectedTeam.id,
+      selectedTeam.elo_rating,
+      selectedTeam.nationality_id,
+      leagueTier,
+    );
+    setPreviewSquad(squad);
+    setSelectedPlayerIds(new Set(squad.map((p) => p.id)));
   };
 
-  const handleSave = async () => {
-    if (!previewTeam) return;
+  const handleReplacePlayer = (oldPlayer: Player) => {
+    const leagueTier = leagues.find((l) => l.id === selectedLeague)?.tier || 4;
+    const replacement = PlayerGenerator.generateSinglePlayer(
+      selectedTeam.id,
+      selectedTeam.elo_rating,
+      selectedTeam.nationality_id,
+      leagueTier,
+      oldPlayer.position as PlayerPosition,
+    );
+    setPreviewSquad((prev) =>
+      prev.map((p) => (p.id === oldPlayer.id ? replacement : p)),
+    );
+    setSelectedPlayerIds((prev) => {
+      const next = new Set(prev);
+      next.delete(oldPlayer.id);
+      next.add(replacement.id);
+      return next;
+    });
+  };
+
+  const togglePlayerSelection = (id: string) => {
+    const newSelection = new Set(selectedPlayerIds);
+    if (newSelection.has(id)) newSelection.delete(id);
+    else newSelection.add(id);
+    setSelectedPlayerIds(newSelection);
+  };
+
+  const handleSaveSquad = async () => {
+    const playersToSave = previewSquad.filter((p) =>
+      selectedPlayerIds.has(p.id),
+    );
+    if (playersToSave.length === 0) return;
     setIsPending(true);
     try {
-      const result = await saveTeamAction(previewTeam);
+      const result = await saveSquadAction(playersToSave);
       if (result.success) {
-        setPreviewTeam(null);
-        getLeagueLimitAction(selectedLeague).then(setLeagueStatus);
-        setMessage({ type: "success", text: result.message ?? "Team saved!" });
+        setMessage({ type: "success", text: result.message ?? "Squad saved!" });
+        setPreviewSquad([]);
+        setSelectedPlayerIds(new Set());
+        getTeamSquadSizeAction(selectedTeam.id).then(setCurrentSquadSize);
       } else {
-        setMessage({ type: "error", text: result.error ?? "Save failed" });
+        setMessage({ type: "error", text: result.error ?? "Failed to save" });
       }
+    } catch (err) {
+      setMessage({ type: "error", text: "Connection error" });
     } finally {
       setIsPending(false);
-    }
-  };
-
-  const handleRegenerate = async () => {
-    setPreviewTeam(null);
-    // Slight delay is handled by handleGenerate's async nature
-    await handleGenerate();
-  };
-
-  const handleWipe = async () => {
-    if (confirm("DANGER: Delete ALL teams and players permanently?")) {
-      const result = await deleteAllTeamsAction();
-      if (result.success) {
-        setMessage({
-          type: "success",
-          text: result.message ?? "Wiped successfully",
-        });
-        setPreviewTeam(null);
-        if (selectedLeague)
-          getLeagueLimitAction(selectedLeague).then(setLeagueStatus);
-      }
     }
   };
 
   return (
-    <div className="min-h-screen bg-black text-white p-8 flex flex-col md:flex-row gap-8">
-      <div className="flex-1 space-y-8">
-        <header>
-          <h1 className="text-3xl font-black italic text-teal-500 uppercase tracking-tighter">
-            Admin Portal
-          </h1>
-          <p className="text-gray-500 text-[10px] uppercase tracking-[0.3em]">
-            Tier-Based Team Architect
-          </p>
-        </header>
+    <div className="min-h-screen bg-black text-white p-8 space-y-12">
+      <header className="max-w-7xl mx-auto">
+        <h1 className="text-4xl font-black italic text-teal-500 uppercase tracking-tighter">
+          Admin Portal
+        </h1>
+      </header>
 
-        <div className="grid grid-cols-2 gap-4">
-          <select
-            value={selectedNation}
-            onChange={(e) => setSelectedNation(e.target.value)}
-            className="bg-gray-900 border border-white/10 p-3 rounded-xl text-sm outline-none focus:border-teal-500 transition"
-          >
-            <option value="">Select Nation</option>
-            {nations.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-          <select
-            value={selectedLeague}
-            onChange={(e) => setSelectedLeague(e.target.value)}
-            disabled={!selectedNation}
-            className="bg-gray-900 border border-white/10 p-3 rounded-xl text-sm outline-none focus:border-teal-500 disabled:opacity-30 transition"
-          >
-            <option value="">Select League</option>
-            {leagues.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
+      <main className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-12">
+        <div className="lg:col-span-3 space-y-12">
+          {/* SELECTORS */}
+          <div className="grid grid-cols-2 gap-4 bg-gray-900/50 p-6 rounded-2xl border border-white/5">
+            <select
+              value={selectedNation}
+              onChange={(e) => setSelectedNation(e.target.value)}
+              className="bg-black border border-white/10 p-3 rounded-xl text-xs uppercase font-bold outline-none focus:border-teal-500 transition"
+            >
+              <option value="">Select Nation</option>
+              {nations.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <select
+              value={selectedLeague}
+              onChange={(e) => setSelectedLeague(e.target.value)}
+              disabled={!selectedNation}
+              className="bg-black border border-white/10 p-3 rounded-xl text-xs uppercase font-bold outline-none focus:border-teal-500 disabled:opacity-20 transition"
+            >
+              <option value="">Select League</option>
+              {leagues.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name} (T{l.tier})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {message && (
+            <div
+              className={`p-4 rounded-xl text-xs font-bold border animate-in fade-in ${message.type === "success" ? "bg-green-500/10 border-green-500/50 text-green-400" : "bg-red-500/10 border-red-500/50 text-red-400"}`}
+            >
+              {message.text}
+            </div>
+          )}
+
+          {/* SQUAD ARCHITECT */}
+          <section className="space-y-6">
+            <h2 className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-500 text-center">
+              Squad Architect
+            </h2>
+
+            <div className="space-y-3">
+              <div className="flex gap-4">
+                <select
+                  onChange={(e) =>
+                    setSelectedTeam(
+                      teamsInLeague.find((t) => t.id === e.target.value),
+                    )
+                  }
+                  className="flex-1 bg-gray-900 border border-white/10 p-4 rounded-xl text-[10px] font-bold uppercase tracking-widest outline-none focus:border-teal-500"
+                >
+                  <option value="">Select Team to Populate</option>
+                  {teamsInLeague.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} (ELO: {t.elo_rating})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleGenerateSquad}
+                  disabled={!selectedTeam || isPending}
+                  className="bg-teal-600 hover:bg-teal-500 px-8 rounded-xl font-black uppercase text-[10px] transition disabled:opacity-20"
+                >
+                  Generate Squad
+                </button>
+              </div>
+              {selectedTeam && (
+                <div className="flex items-center gap-2 px-1">
+                  <div
+                    className={`w-2 h-2 rounded-full ${currentSquadSize >= 35 ? "bg-red-500 animate-pulse" : "bg-green-500"}`}
+                  />
+                  <span
+                    className={`text-[9px] font-bold uppercase tracking-widest ${currentSquadSize >= 35 ? "text-red-400" : "text-gray-500"}`}
+                  >
+                    Current Roster: {currentSquadSize} / 35
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* NATIONALITY SUMMARY SECTION */}
+            {previewSquad.length > 0 && (
+              <div className="bg-gray-900/30 border border-white/5 p-4 rounded-2xl animate-in fade-in">
+                <h3 className="text-[9px] font-black text-gray-500 uppercase tracking-widest mb-3 text-center">
+                  Nationality Distribution
+                </h3>
+                <div className="flex flex-wrap justify-center gap-3">
+                  {nationalitySummary.map(([nation, count]) => (
+                    <div
+                      key={nation}
+                      className="bg-black/40 border border-white/5 px-3 py-1 rounded-full flex items-center gap-2"
+                    >
+                      <span className="text-[10px] font-black text-teal-500">
+                        {nation}
+                      </span>
+                      <span className="text-[10px] font-bold text-white">
+                        {count}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* PLAYER TABLE */}
+            {previewSquad.length > 0 && (
+              <div className="bg-gray-900 border border-teal-500/30 rounded-2xl overflow-hidden animate-in fade-in shadow-2xl">
+                <div className="max-h-[600px] overflow-y-auto">
+                  <table className="w-full text-left text-[10px]">
+                    <thead className="bg-black sticky top-0 text-gray-500 font-black uppercase z-20">
+                      <tr>
+                        <th className="p-4 w-8"></th>
+                        <th
+                          className="p-4 cursor-pointer hover:text-white"
+                          onClick={() => handleSort("name")}
+                        >
+                          NAME
+                        </th>
+                        <th
+                          className="p-2 text-center cursor-pointer hover:text-white"
+                          onClick={() => handleSort("nationality_id")}
+                        >
+                          NAT
+                        </th>
+                        <th
+                          className="p-2 text-center cursor-pointer hover:text-white"
+                          onClick={() => handleSort("age")}
+                        >
+                          AGE
+                        </th>
+                        <th
+                          className="p-2 text-center cursor-pointer hover:text-white"
+                          onClick={() => handleSort("position")}
+                        >
+                          POS
+                        </th>
+                        <th
+                          className="p-2 text-center cursor-pointer hover:text-white"
+                          onClick={() => handleSort("ovr")}
+                        >
+                          OVR
+                        </th>
+                        <th
+                          className="p-2 text-center text-teal-500/50 cursor-pointer"
+                          onClick={() => handleSort("pac")}
+                        >
+                          PAC
+                        </th>
+                        <th
+                          className="p-2 text-center text-teal-500/50 cursor-pointer"
+                          onClick={() => handleSort("sho")}
+                        >
+                          SHO
+                        </th>
+                        <th
+                          className="p-2 text-center text-teal-500/50 cursor-pointer"
+                          onClick={() => handleSort("pas")}
+                        >
+                          PAS
+                        </th>
+                        <th
+                          className="p-2 text-center text-teal-500/50 cursor-pointer"
+                          onClick={() => handleSort("dri")}
+                        >
+                          DRI
+                        </th>
+                        <th
+                          className="p-2 text-center text-teal-500/50 cursor-pointer"
+                          onClick={() => handleSort("def")}
+                        >
+                          DEF
+                        </th>
+                        <th
+                          className="p-2 text-center text-teal-500/50 cursor-pointer"
+                          onClick={() => handleSort("phy")}
+                        >
+                          PHY
+                        </th>
+                        <th className="p-4 text-right">ACTIONS</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {sortedSquad.map((p) => (
+                        <tr
+                          key={p.id}
+                          className={`transition-colors group ${selectedPlayerIds.has(p.id) ? "bg-teal-500/10" : "opacity-40 hover:opacity-100"}`}
+                        >
+                          <td
+                            className="p-4"
+                            onClick={() => togglePlayerSelection(p.id)}
+                          >
+                            <div
+                              className={`w-4 h-4 rounded border flex items-center justify-center ${selectedPlayerIds.has(p.id) ? "bg-teal-500 border-teal-500" : "border-white/20"}`}
+                            >
+                              {selectedPlayerIds.has(p.id) && (
+                                <span className="text-black font-black">✓</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-4 font-bold uppercase text-white whitespace-nowrap">
+                            {p.name}
+                          </td>
+                          <td className="p-2 text-center font-bold text-gray-400">
+                            {p.nationality_id}
+                          </td>
+                          <td className="p-2 text-center text-gray-400">
+                            {p.age}
+                          </td>
+                          <td className="p-2 text-center text-teal-500 font-black">
+                            {p.position}
+                          </td>
+                          <td className="p-2 text-center font-black text-white bg-white/5">
+                            {p.ovr}
+                          </td>
+                          <td className="p-2 text-center text-gray-400">
+                            {(p as any).attributes?.pac}
+                          </td>
+                          <td className="p-2 text-center text-gray-400">
+                            {(p as any).attributes?.sho}
+                          </td>
+                          <td className="p-2 text-center text-gray-400">
+                            {(p as any).attributes?.pas}
+                          </td>
+                          <td className="p-2 text-center text-gray-400">
+                            {(p as any).attributes?.dri}
+                          </td>
+                          <td className="p-2 text-center text-gray-400">
+                            {(p as any).attributes?.def}
+                          </td>
+                          <td className="p-2 text-center text-gray-400">
+                            {(p as any).attributes?.phy}
+                          </td>
+                          <td className="p-4 text-right">
+                            <button
+                              onClick={() => handleReplacePlayer(p)}
+                              className="text-[9px] bg-white/5 border border-white/10 px-2 py-1 rounded hover:bg-red-500/20 hover:text-red-500 transition uppercase font-black"
+                            >
+                              Replace
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="p-4 bg-black/50 flex gap-4">
+                  <button
+                    onClick={handleSaveSquad}
+                    disabled={selectedPlayerIds.size === 0 || isPending}
+                    className="flex-1 bg-green-600 hover:bg-green-500 p-4 rounded-xl font-black uppercase text-[10px] disabled:opacity-50"
+                  >
+                    Commit Selected ({selectedPlayerIds.size})
+                  </button>
+                  <button
+                    onClick={() => setPreviewSquad([])}
+                    className="flex-1 bg-white/5 p-4 rounded-xl font-black uppercase text-[10px] text-gray-500"
+                  >
+                    Discard All
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
         </div>
 
-        {message && (
-          <div
-            className={`p-4 rounded-xl text-xs font-bold border animate-in fade-in zoom-in-95 ${
-              message.type === "success"
-                ? "bg-green-500/10 border-green-500/50 text-green-400"
-                : "bg-red-500/10 border-red-500/50 text-red-400"
-            }`}
-          >
-            {message.text}
-          </div>
-        )}
-
-        {!previewTeam ? (
-          <button
-            onClick={handleGenerate}
-            disabled={!selectedLeague || leagueStatus?.isFull || isPending}
-            className="w-full bg-teal-600 hover:bg-teal-500 p-4 rounded-xl font-black uppercase tracking-widest text-xs transition disabled:bg-gray-800 disabled:text-gray-600 active:scale-[0.98]"
-          >
-            {leagueStatus?.isFull
-              ? "League Full"
-              : isPending
-                ? "Generating..."
-                : "Generate Random Team"}
-          </button>
-        ) : (
-          <div className="bg-gray-900 border border-teal-500/30 p-8 rounded-2xl animate-in fade-in slide-in-from-bottom-4 shadow-[0_0_50px_rgba(20,184,166,0.1)]">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h2 className="text-3xl font-black italic text-white tracking-tighter uppercase">
-                  {previewTeam.name}
-                </h2>
-                <p className="text-teal-500 text-[10px] font-bold tracking-[0.3em] uppercase">
-                  Draft Strategy Created
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-gray-500 text-[10px] uppercase font-bold">
-                  Base ELO
-                </p>
-                <p className="text-3xl font-black text-white">
-                  {previewTeam.elo_rating}
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 py-6 border-y border-white/5">
-              <div className="space-y-4">
-                <div>
-                  <p className="text-[10px] text-gray-500 uppercase font-bold mb-1">
-                    Philosophy
-                  </p>
-                  <p className="text-lg font-black text-gray-200 italic">
-                    {previewTeam.tactics.style}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-gray-500 uppercase font-bold mb-1">
-                    Formation
-                  </p>
-                  <p className="text-lg font-black text-gray-200">
-                    {previewTeam.tactics.formation}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[9px] font-bold uppercase text-gray-500 tracking-widest">
-                    <span>Width</span>
-                    <span>{previewTeam.tactics.width}</span>
-                  </div>
-                  <div className="h-1 w-full bg-gray-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-teal-500"
-                      style={{ width: `${previewTeam.tactics.width}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[9px] font-bold uppercase text-gray-500 tracking-widest">
-                    <span>Depth</span>
-                    <span>{previewTeam.tactics.depth}</span>
-                  </div>
-                  <div className="h-1 w-full bg-gray-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-teal-500"
-                      style={{ width: `${previewTeam.tactics.depth}%` }}
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4 text-[10px] mt-2">
-                  <p>
-                    <span className="text-gray-600 block uppercase font-bold mb-0.5 border-b border-white/5 pb-1">
-                      Build Up
-                    </span>
-                    {previewTeam.tactics.buildUp}
-                  </p>
-                  <p>
-                    <span className="text-gray-600 block uppercase font-bold mb-0.5 border-b border-white/5 pb-1">
-                      Creation
-                    </span>
-                    {previewTeam.tactics.chanceCreation}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-8">
-              <button
-                onClick={handleSave}
-                disabled={isPending}
-                className="bg-green-600 hover:bg-green-500 p-4 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50"
-              >
-                Approve & Save
-              </button>
-
-              <button
-                onClick={handleRegenerate}
-                disabled={isPending}
-                className="bg-teal-600/20 hover:bg-teal-600/40 text-teal-400 border border-teal-500/30 p-4 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95"
-              >
-                Discard & New
-              </button>
-
-              <button
-                onClick={() => setPreviewTeam(null)}
-                disabled={isPending}
-                className="bg-white/5 hover:bg-white/10 text-gray-500 p-4 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all"
-              >
-                Just Discard
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <aside className="w-full md:w-72 space-y-4">
-        <div className="bg-gray-900 border border-white/5 p-6 rounded-2xl sticky top-8">
+        <aside className="bg-gray-900 border border-white/5 p-6 rounded-2xl h-fit sticky top-8">
           <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-6">
             League Status
           </h3>
-          {leagueStatus ? (
+          {leagueStatus && (
             <div className="space-y-6">
-              <div>
-                <p className="text-[10px] text-gray-600 uppercase font-bold mb-1">
-                  Teams Enrolled
-                </p>
-                <p
-                  className={`text-4xl font-black ${leagueStatus.isFull ? "text-red-500" : "text-teal-500"}`}
-                >
-                  {leagueStatus.current}{" "}
-                  <span className="text-sm text-gray-700">
-                    / {leagueStatus.max}
-                  </span>
-                </p>
-              </div>
+              <p className="text-4xl font-black text-teal-500">
+                {leagueStatus.current}{" "}
+                <span className="text-sm text-gray-700">
+                  / {leagueStatus.max}
+                </span>
+              </p>
               <div className="h-1.5 w-full bg-black rounded-full overflow-hidden border border-white/5">
                 <div
-                  className={`h-full transition-all duration-700 ${leagueStatus.isFull ? "bg-red-500" : "bg-teal-500"}`}
+                  className="h-full bg-teal-500"
                   style={{
                     width: `${(leagueStatus.current / leagueStatus.max) * 100}%`,
                   }}
                 />
               </div>
             </div>
-          ) : (
-            <p className="text-[10px] text-gray-700 italic font-bold uppercase tracking-widest text-center py-4">
-              Select league
-            </p>
           )}
-          <button
-            onClick={handleWipe}
-            className="w-full mt-12 pt-6 border-t border-white/5 text-[9px] font-black text-red-900 hover:text-red-500 transition uppercase tracking-tighter"
-          >
-            Wipe All Teams
-          </button>
-        </div>
-      </aside>
+        </aside>
+      </main>
     </div>
   );
 }

@@ -1,81 +1,129 @@
-import { Player, PlayerAttributes } from "@/app/models";
-// Import the dictionary we created
+import { Player, PlayerPosition } from "@/app/models";
 import { PLAYER_NAME_DICTIONARY } from "../dictionaries/playerNameData";
 
-const POSITION_CONFIG: Record<
-  string,
-  { primary: (keyof PlayerAttributes)[]; secondary: (keyof PlayerAttributes)[] }
-> = {
-  ST: { primary: ["pace", "shooting"], secondary: ["physical", "dribbling"] },
-  CB: { primary: ["defending", "physical"], secondary: ["passing"] },
-  CM: {
-    primary: ["passing", "dribbling"],
-    secondary: ["shooting", "defending"],
-  },
-  GK: { primary: ["physical", "defending"], secondary: ["passing"] },
-};
-
 export class PlayerGenerator {
-  static generate(
-    position: Player["position"],
-    nationality_id: string,
-    teamId: string,
-    targetOvr: number,
-  ): Player {
-    // 1. Get the correct name pool based on nationality_id
-    const pool =
-      PLAYER_NAME_DICTIONARY[nationality_id] || PLAYER_NAME_DICTIONARY.DEFAULT;
+  private static getWeightedNationality(
+    localNation: string,
+    tier: number,
+  ): string {
+    const random = Math.random();
 
-    // 2. Pick names specifically from that pool
-    const firstName =
-      pool.firstNames[Math.floor(Math.random() * pool.firstNames.length)];
-    const lastName =
-      pool.lastNames[Math.floor(Math.random() * pool.lastNames.length)];
+    // Tier 1 (Global): 40% Local, 40% Top Nations, 20% Random Global
+    if (tier === 1) {
+      if (random < 0.4) return localNation;
+      if (random < 0.8) {
+        const topNations = [
+          "BRA",
+          "ARG",
+          "FRA",
+          "ESP",
+          "ENG",
+          "GER",
+          "POR",
+          "ITA",
+          "NED",
+        ];
+        return topNations[Math.floor(Math.random() * topNations.length)];
+      }
+      const allNations = Object.keys(PLAYER_NAME_DICTIONARY);
+      return allNations[Math.floor(Math.random() * allNations.length)];
+    }
 
-    const name = `${firstName} ${lastName}`;
+    // Tier 2-3 (Regional): 70% Local, 20% Regional/Top, 10% Random
+    if (tier <= 3) {
+      if (random < 0.7) return localNation;
+      return random < 0.9 ? "ENG" : "FRA";
+    }
 
-    return {
-      id: `p_${Math.random().toString(36).substring(2, 9)}`,
-      teamId,
-      name,
-      position,
-      ovr: targetOvr,
-      currentElo: 1200,
-      age: Math.floor(Math.random() * (23 - 17 + 1)) + 17,
-      nationality_id: nationality_id as any,
-      attributes: this.generateAttributes(position, targetOvr),
-      history: [],
-    };
+    // Tier 4+ (Local): 95% Local, 5% Random
+    const allNations = Object.keys(PLAYER_NAME_DICTIONARY);
+    return random < 0.95
+      ? localNation
+      : allNations[Math.floor(Math.random() * allNations.length)];
   }
 
-  private static generateAttributes(
-    pos: string,
-    ovr: number,
-  ): PlayerAttributes {
-    const config = POSITION_CONFIG[pos] || POSITION_CONFIG["CM"];
+  static generateSinglePlayer(
+    teamId: string,
+    teamElo: number,
+    localNation: string,
+    tier: number,
+    position: PlayerPosition,
+  ): Player {
+    const eloOffset = (teamElo - 1000) / 40;
+    const baseOverall = Math.floor(70 + eloOffset);
+    const varianceRange = tier === 1 ? 14 : 8;
+    const variance =
+      Math.floor(Math.random() * varianceRange) - varianceRange / 2;
+    const finalOvr = Math.min(94, Math.max(45, baseOverall + variance));
+    const nation = this.getWeightedNationality(localNation, tier);
 
-    const genStat = (isPrimary: boolean) => {
-      const variance = isPrimary ? 40 : -20;
-      return Math.min(
-        990,
-        Math.max(300, ovr + Math.floor(Math.random() * 50) + variance),
-      );
+    return {
+      id: crypto.randomUUID(),
+      name: this.generateName(nation),
+      age: Math.floor(Math.random() * (36 - 17 + 1)) + 17,
+      position: position,
+      ovr: finalOvr,
+      teamId: teamId,
+      nationality_id: nation,
+      attributes: this.generateAttributes(finalOvr), // Generate the stats object
+    } as any;
+  }
+
+  static generateSquad(
+    teamId: string,
+    teamElo: number,
+    localNation: string,
+    tier: number,
+  ): Player[] {
+    const squad: Player[] = [];
+    const squadTemplate: { pos: PlayerPosition; count: number }[] = [
+      { pos: "GK", count: 3 }, // +1 for depth
+      { pos: "CB", count: 6 }, // +2 for depth
+      { pos: "LB", count: 3 }, // +1
+      { pos: "RB", count: 3 }, // +1
+      { pos: "CDM", count: 3 }, // +1
+      { pos: "CM", count: 5 }, // +2
+      { pos: "CAM", count: 3 }, // +1
+      { pos: "LM", count: 2 }, // +1
+      { pos: "RM", count: 2 }, // +1
+      { pos: "ST", count: 5 }, // +2
+    ];
+
+    squadTemplate.forEach(({ pos, count }) => {
+      for (let i = 0; i < count; i++) {
+        squad.push(
+          this.generateSinglePlayer(teamId, teamElo, localNation, tier, pos),
+        );
+      }
+    });
+
+    return squad;
+  }
+
+  static generateName(nationality_id: string): string {
+    const dict =
+      PLAYER_NAME_DICTIONARY[nationality_id] || PLAYER_NAME_DICTIONARY["ENG"];
+    const first =
+      dict.firstNames[Math.floor(Math.random() * dict.firstNames.length)];
+    const last =
+      dict.lastNames[Math.floor(Math.random() * dict.lastNames.length)];
+    return `${first} ${last}`;
+  }
+
+  // frontend/src/lib/generators/PlayerGenerator.ts
+
+  private static generateAttributes(ovr: number) {
+    // Generates 6 core attributes centered around the player's OVR
+    const vary = () =>
+      Math.min(99, Math.max(30, ovr + (Math.floor(Math.random() * 12) - 6)));
+
+    return {
+      pac: vary(), // Pace
+      sho: vary(), // Shooting
+      pas: vary(), // Passing
+      dri: vary(), // Dribbling
+      def: vary(), // Defending
+      phy: vary(), // Physical
     };
-
-    const attributes: any = {
-      pace: genStat(config.primary.includes("pace")),
-      shooting: genStat(config.primary.includes("shooting")),
-      passing: genStat(config.primary.includes("passing")),
-      dribbling: genStat(config.primary.includes("dribbling")),
-      defending: genStat(config.primary.includes("defending")),
-      physical: genStat(config.primary.includes("physical")),
-      playstyles: [],
-      playstylePlus: "",
-    };
-
-    if (pos === "ST") attributes.playstylePlus = "Power Shot+";
-    if (pos === "CB") attributes.playstylePlus = "Anticipate+";
-
-    return attributes as PlayerAttributes;
   }
 }

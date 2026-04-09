@@ -33,7 +33,7 @@ export const SeasonSummaryCard = ({ stats }: { stats: any }) => {
               <td className={valueClass}>
                 {stats.totalGoals}{" "}
                 <span className="text-gray-600 ml-1">
-                  ({stats.goalsPerMatch}/m)
+                  ({stats.goalsPerMatch}/match)
                 </span>
               </td>
             </tr>

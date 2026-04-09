@@ -3,7 +3,8 @@
 import Database from "better-sqlite3";
 import path from "path";
 import { TeamGenerator } from "@/lib/generators/TeamGenerator";
-import { Team, LeagueTableEntry } from "@/app/models";
+import { Team, LeagueTableEntry, Player } from "@/app/models";
+import { PlayerGenerator } from "@/lib/generators/PlayerGenerator";
 
 const dbPath = path.join(process.cwd(), "..", "lunaris-league.db");
 
@@ -274,6 +275,131 @@ export async function getSeasonStatsAction(
       biggestAwayWin: records?.bAway || "N/A",
       highestScoring: records?.hScoring || "N/A",
     };
+  } finally {
+    db.close();
+  }
+}
+
+export async function getTeamsByLeagueAction(leagueId: string) {
+  const db = new Database(dbPath);
+  try {
+    return db
+      .prepare(
+        "SELECT id, name, elo_rating, nationality_id FROM teams WHERE league_id = ? ORDER BY name ASC",
+      )
+      .all(leagueId) as {
+      id: string;
+      name: string;
+      elo_rating: number;
+      nationality_id: string;
+    }[];
+  } finally {
+    db.close();
+  }
+}
+
+export async function generatePlayersForTeamAction(
+  teamId: string,
+  teamElo: number,
+  nationality_id: string,
+  tier: number, // 1. Added this parameter
+) {
+  try {
+    // 2. Pass the tier to the generator
+    const players = PlayerGenerator.generateSquad(
+      teamId,
+      teamElo,
+      nationality_id,
+      tier,
+    );
+    return { success: true, players };
+  } catch (e) {
+    console.error("Squad generation error:", e);
+    return { success: false, error: "Squad generation failed" };
+  }
+}
+
+export async function savePlayersAction(players: Player[]) {
+  const db = new Database(dbPath);
+  try {
+    const insert = db.prepare(`
+      INSERT INTO players (id, name, age, position, overall, teamId, nationality_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const transaction = db.transaction((playerList) => {
+      for (const p of playerList) {
+        insert.run(
+          p.id,
+          p.name,
+          p.age,
+          p.position,
+          p.overall,
+          p.teamId,
+          p.nationality_id,
+        );
+      }
+    });
+
+    transaction(players);
+    return {
+      success: true,
+      message: `Successfully saved ${players.length} players.`,
+    };
+  } catch (e) {
+    return { success: false, error: "Failed to save players." };
+  } finally {
+    db.close();
+  }
+}
+
+// frontend/src/app/actions/dbActions.ts
+
+export async function saveSquadAction(players: any[]) {
+  const db = new Database(dbPath);
+  try {
+    const insert = db.prepare(`
+      INSERT INTO players (id, name, age, position, ovr, teamId, nationality_id, attributes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const transaction = db.transaction((playerList) => {
+      for (const p of playerList) {
+        insert.run(
+          p.id,
+          p.name,
+          p.age,
+          p.position,
+          p.ovr,
+          p.team_id, // Use the property name from your PlayerGenerator
+          p.nationality_id, // Use the property name from your PlayerGenerator
+          JSON.stringify(p.attributes || {}),
+        );
+      }
+    });
+
+    transaction(players);
+    return {
+      success: true,
+      message: `Successfully saved ${players.length} players.`,
+    };
+  } catch (e) {
+    console.error("❌ Database Error:", e);
+    return { success: false, error: "Database write failed." };
+  } finally {
+    db.close();
+  }
+}
+
+export async function getTeamSquadSizeAction(teamId: string) {
+  const db = new Database(dbPath);
+  try {
+    const result = db
+      .prepare("SELECT COUNT(*) as count FROM players WHERE teamId = ?")
+      .get(teamId) as { count: number };
+    return result.count;
+  } catch (e) {
+    return 0;
   } finally {
     db.close();
   }

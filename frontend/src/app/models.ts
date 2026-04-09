@@ -17,31 +17,30 @@ export interface PlayerHistory {
   appearances: number;
 }
 
+export type PlayerPosition =
+  | "GK"
+  | "CB"
+  | "LB"
+  | "RB"
+  | "CDM"
+  | "CM"
+  | "CAM"
+  | "LM"
+  | "RM"
+  | "ST"
+  | "LWB"
+  | "RWB"
+  | "LW"
+  | "RW"
+  | "CF";
+
 export interface Player {
   id: string;
-  teamId: string;
   name: string;
-  position:
-    | "GK"
-    | "LB"
-    | "CB"
-    | "RB"
-    | "LWB"
-    | "RWB"
-    | "CDM"
-    | "CM"
-    | "CAM"
-    | "LM"
-    | "RM"
-    | "LW"
-    | "RW"
-    | "ST"
-    | "CF";
-  ovr: number;
-  currentElo: number;
-  attributes: PlayerAttributes;
-  history: PlayerHistory[];
   age: number;
+  position: PlayerPosition; // Use the union type here
+  ovr: number;
+  teamId: string;
   nationality_id: string;
 }
 
