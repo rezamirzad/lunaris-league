@@ -48,18 +48,18 @@ export async function getLeaguesByNationAction(nationalityId: string) {
     const leagues = db
       .prepare(
         `
-      SELECT DISTINCT t.league_id as id, c.name 
-      FROM teams t
-      LEFT JOIN competitions c ON t.league_id = c.id
-      WHERE t.nationality_id = ?
-      ORDER BY c.name
+      SELECT 
+        id, 
+        name, 
+        COALESCE(tier, 99) as tier -- Default unranked leagues to the bottom
+      FROM competitions 
+      WHERE nationality_id = ?
+      ORDER BY tier ASC, name ASC
     `,
       )
-      .all(nationalityId) as { id: string; name: string | null }[];
-    return leagues.map((l) => ({
-      id: l.id,
-      name: l.name || `Unknown League (${l.id})`,
-    }));
+      .all(nationalityId) as { id: string; name: string; tier: number }[];
+
+    return leagues;
   } finally {
     db.close();
   }
@@ -138,19 +138,35 @@ export async function createRegenAction(nationality: string, teamId: string) {
   }
 }
 
-export async function createTeamAction() {
+// frontend/src/app/actions/dbActions.ts
+
+export async function createTeamAction(
+  leagueId: string,
+  nationalityId: string,
+) {
   const db = new Database(dbPath);
   try {
-    const nations = ["ENG", "ESP", "NOR", "IRN"];
-    const randomNation = nations[Math.floor(Math.random() * nations.length)];
-    const newTeam = TeamGenerator.generate("l_464dfb25", randomNation);
+    // 1. Generate the team using the specific league and nation context
+    const newTeam = TeamGenerator.generate(leagueId, nationalityId);
 
-    db.prepare(
-      `
+    // 2. Check for name collisions
+    const existing = db
+      .prepare("SELECT id FROM teams WHERE name = ?")
+      .get(newTeam.name);
+    if (existing) {
+      return {
+        success: false,
+        error: `Collision: ${newTeam.name} already exists.`,
+      };
+    }
+
+    // 3. Insert into Database
+    const stmt = db.prepare(`
       INSERT INTO teams (id, name, league_id, elo_rating, tactics_json, nationality_id)
       VALUES (?, ?, ?, ?, ?, ?)
-    `,
-    ).run(
+    `);
+
+    stmt.run(
       newTeam.id,
       newTeam.name,
       newTeam.league_id,
@@ -159,7 +175,20 @@ export async function createTeamAction() {
       newTeam.nationality_id,
     );
 
-    return { success: true, team: newTeam };
+    // 4. Return detailed feedback
+    return {
+      success: true,
+      message: `Successfully created ${newTeam.name}`,
+      details: {
+        name: newTeam.name,
+        league: leagueId,
+        nation: nationalityId,
+        rating: newTeam.elo_rating,
+      },
+    };
+  } catch (e) {
+    console.error("❌ Team Generation Error:", e);
+    return { success: false, error: "Database insertion failed." };
   } finally {
     db.close();
   }
@@ -352,7 +381,11 @@ export async function getSeasonStatsAction(
       totalMatches: basic?.totalMatches || 0,
       totalGoals: basic?.totalGoals || 0,
       goalsPerMatch: basic?.goalsPerMatch || "0.00",
-      topScorer: topScorer ? `${topScorer.name} (${topScorer.g})` : "N/A",
+      // Improved formatting for top scorer
+      topScorer:
+        topScorer && topScorer.g > 0
+          ? `${topScorer.name} (${topScorer.g} goals)`
+          : "No goals recorded",
       biggestHomeWin: records?.bHome || "N/A",
       biggestAwayWin: records?.bAway || "N/A",
       highestScoring: records?.hScoring || "N/A",
@@ -361,6 +394,37 @@ export async function getSeasonStatsAction(
       winlessRun: findMax("winless"),
       losingRun: findMax("loss"),
     };
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Updates competition metadata (Nationality and Tier)
+ */
+export async function updateCompetitionMetaAction(
+  competitionId: string,
+  nationalityId: string,
+  tier: number,
+) {
+  const db = new Database(dbPath);
+  try {
+    const stmt = db.prepare(`
+      UPDATE competitions 
+      SET nationality_id = ?, tier = ? 
+      WHERE id = ?
+    `);
+
+    const result = stmt.run(nationalityId, tier, competitionId);
+
+    if (result.changes > 0) {
+      return { success: true, message: "Competition updated successfully." };
+    } else {
+      return { success: false, error: "Competition ID not found." };
+    }
+  } catch (error) {
+    console.error("❌ SQL Update Error:", error);
+    return { success: false, error: "Database update failed." };
   } finally {
     db.close();
   }
