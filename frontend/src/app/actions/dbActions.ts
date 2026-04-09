@@ -3,7 +3,7 @@
 import Database from "better-sqlite3";
 import path from "path";
 import { TeamGenerator } from "@/lib/generators/TeamGenerator";
-import { Team } from "@/app/models";
+import { Team, LeagueTableEntry } from "@/app/models";
 
 const dbPath = path.join(process.cwd(), "..", "lunaris-league.db");
 
@@ -53,13 +53,18 @@ export async function getLeaguesByNationAction(nationalityId: string) {
     return db
       .prepare(
         `
-        SELECT id, name, COALESCE(tier, 99) as tier 
+        SELECT id, name, type, COALESCE(tier, 99) as tier 
         FROM competitions 
         WHERE nationality_id = ?
         ORDER BY tier ASC, name ASC
       `,
       )
-      .all(nationalityId) as { id: string; name: string; tier: number }[];
+      .all(nationalityId) as {
+      id: string;
+      name: string;
+      type: string;
+      tier: number;
+    }[];
   } finally {
     db.close();
   }
@@ -170,6 +175,105 @@ export async function getTeamMatchesAction(teamId: string, seasonId: string) {
   } catch (error) {
     console.error("❌ Error fetching team matches:", error);
     return [];
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Generates the league table for a specific competition and season
+ */
+export async function getLeagueTableAction(
+  competitionId: string,
+  seasonId: string,
+): Promise<LeagueTableEntry[]> {
+  const db = new Database(dbPath);
+  try {
+    const query = `
+      SELECT 
+        t.id as teamId, t.name as teamName,
+        COUNT(m.id) as played,
+        SUM(CASE WHEN (m.home_team_id = t.id AND m.home_goals > m.away_goals) OR (m.away_team_id = t.id AND m.away_goals > m.home_goals) THEN 1 ELSE 0 END) as won,
+        SUM(CASE WHEN m.home_goals = m.away_goals AND m.id IS NOT NULL THEN 1 ELSE 0 END) as drawn,
+        SUM(CASE WHEN (m.home_team_id = t.id AND m.home_goals < m.away_goals) OR (m.away_team_id = t.id AND m.away_goals < m.home_goals) THEN 1 ELSE 0 END) as lost,
+        SUM(CASE WHEN m.home_team_id = t.id THEN m.home_goals ELSE 0 END) + SUM(CASE WHEN m.away_team_id = t.id THEN m.away_goals ELSE 0 END) as gf,
+        SUM(CASE WHEN m.home_team_id = t.id THEN m.away_goals ELSE 0 END) + SUM(CASE WHEN m.away_team_id = t.id THEN m.home_goals ELSE 0 END) as ga,
+        SUM(CASE WHEN (m.home_team_id = t.id AND m.home_goals > m.away_goals) OR (m.away_team_id = t.id AND m.away_goals > m.home_goals) THEN 3 WHEN m.home_goals = m.away_goals AND m.id IS NOT NULL THEN 1 ELSE 0 END) as points,
+        (SELECT group_concat(res, ',') FROM (
+          SELECT CASE WHEN (m2.home_team_id = t.id AND m2.home_goals > m2.away_goals) OR (m2.away_team_id = t.id AND m2.away_goals > m2.home_goals) THEN 'W' WHEN m2.home_goals = m2.away_goals THEN 'D' ELSE 'L' END as res
+          FROM matches m2 WHERE (m2.home_team_id = t.id OR m2.away_team_id = t.id) AND m2.competition_id = ? AND m2.season_id = ?
+          ORDER BY m2.matchweek DESC LIMIT 5
+        )) as form
+      FROM teams t
+      LEFT JOIN matches m ON (t.id = m.home_team_id OR t.id = m.away_team_id) 
+        AND m.competition_id = ? 
+        AND m.season_id = ?
+      WHERE t.league_id = ? 
+      GROUP BY t.id
+      ORDER BY points DESC, (gf - ga) DESC, gf DESC
+    `;
+
+    const rows = db
+      .prepare(query)
+      .all(
+        competitionId,
+        seasonId,
+        competitionId,
+        seasonId,
+        competitionId,
+      ) as any[];
+
+    return rows.map((row) => ({
+      ...row,
+      gd: (row.gf || 0) - (row.ga || 0),
+      form: row.form ? row.form.split(",").reverse() : [],
+    })) as LeagueTableEntry[];
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Fetches aggregate statistics for a competition season
+ */
+export async function getSeasonStatsAction(
+  competitionId: string,
+  seasonId: string,
+) {
+  const db = new Database(dbPath);
+  try {
+    const basic = db
+      .prepare(
+        `SELECT COUNT(*) as totalMatches, SUM(home_goals + away_goals) as totalGoals, ROUND(AVG(home_goals + away_goals), 2) as goalsPerMatch FROM matches WHERE competition_id = ? AND season_id = ?`,
+      )
+      .get(competitionId, seasonId) as any;
+
+    const records = db
+      .prepare(
+        `
+      SELECT 
+        (SELECT ht.name || ' ' || home_goals || '-' || away_goals || ' ' || at.name FROM matches m JOIN teams ht ON m.home_team_id = ht.id JOIN teams at ON m.away_team_id = at.id WHERE competition_id = ? AND season_id = ? ORDER BY (home_goals - away_goals) DESC LIMIT 1) as bHome,
+        (SELECT at.name || ' ' || away_goals || '-' || home_goals || ' ' || ht.name FROM matches m JOIN teams ht ON m.home_team_id = ht.id JOIN teams at ON m.away_team_id = at.id WHERE competition_id = ? AND season_id = ? ORDER BY (away_goals - home_goals) DESC LIMIT 1) as bAway,
+        (SELECT ht.name || ' ' || home_goals || '-' || away_goals || ' ' || at.name FROM matches m JOIN teams ht ON m.home_team_id = ht.id JOIN teams at ON m.away_team_id = at.id WHERE competition_id = ? AND season_id = ? ORDER BY (home_goals + away_goals) DESC LIMIT 1) as hScoring
+    `,
+      )
+      .get(
+        competitionId,
+        seasonId,
+        competitionId,
+        seasonId,
+        competitionId,
+        seasonId,
+      ) as any;
+
+    return {
+      totalMatches: basic?.totalMatches || 0,
+      totalGoals: basic?.totalGoals || 0,
+      goalsPerMatch: basic?.goalsPerMatch || "0.00",
+      biggestHomeWin: records?.bHome || "N/A",
+      biggestAwayWin: records?.bAway || "N/A",
+      highestScoring: records?.hScoring || "N/A",
+    };
   } finally {
     db.close();
   }

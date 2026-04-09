@@ -10,12 +10,12 @@ export const LeagueTableCard = ({
   data,
   title,
   seasonStats,
-  seasonId, // 1. Added seasonId prop
+  seasonId, // Pass from parent
 }: {
   data: LeagueTableEntry[];
   title?: string;
   seasonStats: any;
-  seasonId: string; // 2. Typed seasonId
+  seasonId: string; // Add type
 }) => {
   const [selectedTeamResults, setSelectedTeamResults] = useState<{
     name: string;
@@ -24,7 +24,7 @@ export const LeagueTableCard = ({
   const isSidebarOpen = !!selectedTeamResults;
 
   const handleTeamClick = async (teamId: string, teamName: string) => {
-    // 3. Replaced hardcoded string with the prop
+    // Uses the dynamic seasonId prop instead of hardcoded string
     const matches = await getTeamMatchesAction(teamId, seasonId);
     setSelectedTeamResults({ name: teamName, matches });
   };
@@ -121,16 +121,14 @@ export const LeagueTableCard = ({
                     {!isSidebarOpen && (
                       <td className="px-2 py-2">
                         <div className="flex justify-center gap-1">
-                          {row.form
-                            ?.slice(0, 5)
-                            .map((result: string, i: number) => (
-                              <span
-                                key={i}
-                                className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-black text-white shadow-sm ${result === "W" ? "bg-teal-500" : result === "D" ? "bg-gray-500" : "bg-red-900"}`}
-                              >
-                                {result}
-                              </span>
-                            ))}
+                          {row.form?.slice(0, 5).map((result, i) => (
+                            <span
+                              key={i}
+                              className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-black text-white shadow-sm ${result === "W" ? "bg-teal-500" : result === "D" ? "bg-gray-500" : "bg-red-900"}`}
+                            >
+                              {result}
+                            </span>
+                          ))}
                         </div>
                       </td>
                     )}
@@ -145,8 +143,8 @@ export const LeagueTableCard = ({
       <div className="w-full lg:w-80 lg:shrink-0">
         {isSidebarOpen ? (
           <TeamResultsSidebar
-            teamName={selectedTeamResults.name}
-            matches={selectedTeamResults.matches}
+            teamName={selectedTeamResults!.name}
+            matches={selectedTeamResults!.matches}
             onClose={() => setSelectedTeamResults(null)}
           />
         ) : (
