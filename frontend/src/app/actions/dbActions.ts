@@ -404,3 +404,15 @@ export async function getTeamSquadSizeAction(teamId: string) {
     db.close();
   }
 }
+
+export async function getSeasonsAction() {
+  const db = new Database(dbPath);
+  try {
+    const seasons = db
+      .prepare("SELECT id FROM seasons ORDER BY id DESC")
+      .all() as { id: string }[];
+    return seasons.map((s) => s.id);
+  } finally {
+    db.close();
+  }
+}

@@ -7,20 +7,31 @@ import {
   getLeaguesByNationAction,
   getLeagueTableAction,
   getSeasonStatsAction,
+  getSeasonsAction,
 } from "./actions/dbActions";
 import { LeagueTableEntry } from "./models";
 import { LeagueTableCard } from "./components/LeagueTableCard";
 
 export default function Home() {
-  const [leagueTable, setLeagueTable] = useState<LeagueTableEntry[]>([]);
-  const [seasonStats, setSeasonStats] = useState<any>(null);
   const [nations, setNations] = useState<string[]>([]);
   const [leagues, setLeagues] = useState<{ id: string; name: string }[]>([]);
+  const [seasons, setSeasons] = useState<string[]>([]);
+
   const [selectedNation, setSelectedNation] = useState("");
   const [selectedLeague, setSelectedLeague] = useState("");
+  const [selectedSeason, setSelectedSeason] = useState(""); // Initialize empty
 
-  // Define the active season context
-  const currentSeason = "s_2526";
+  const [leagueTable, setLeagueTable] = useState<LeagueTableEntry[]>([]);
+  const [seasonStats, setSeasonStats] = useState<any>(null);
+
+  const selectedLeagueName =
+    leagues.find((l) => l.id === selectedLeague)?.name || "";
+
+  const formatSeasonDisplay = (sId: string) => {
+    if (!sId || sId.length < 6) return sId;
+    return `20${sId.slice(2, 4)} - ${sId.slice(4, 6)}`;
+  };
+  const displaySeason = formatSeasonDisplay(selectedSeason);
 
   useEffect(() => {
     getNationalitiesAction().then(setNations);
@@ -37,11 +48,20 @@ export default function Home() {
     }
   }, [selectedNation]);
 
+  useEffect(() => {
+    getNationalitiesAction().then(setNations);
+    // Fetch available seasons on mount
+    getSeasonsAction().then((data) => {
+      setSeasons(data);
+      if (data.length > 0) setSelectedSeason(data[0]); // Default to latest
+    });
+  }, []);
+
   const handleFetchTable = async () => {
-    if (!selectedLeague) return;
+    if (!selectedLeague || !selectedSeason) return;
     const [tableData, statsData] = await Promise.all([
-      getLeagueTableAction(selectedLeague, currentSeason),
-      getSeasonStatsAction(selectedLeague, currentSeason),
+      getLeagueTableAction(selectedLeague, selectedSeason),
+      getSeasonStatsAction(selectedLeague, selectedSeason),
     ]);
     setLeagueTable(tableData);
     setSeasonStats(statsData);
@@ -51,16 +71,27 @@ export default function Home() {
     <div className="min-h-screen bg-black text-white font-sans">
       <header className="border-b border-gray-800 bg-gray-900/20 sticky top-0 z-[100] backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+          {/* Logo Section */}
           <div>
             <h1 className="text-2xl font-black tracking-tighter text-teal-500 italic">
               LUNARIS LEAGUE
             </h1>
-            <p className="text-[9px] text-gray-500 uppercase tracking-[0.3em] font-bold">
-              Global Database v1.0
-            </p>
           </div>
 
           <div className="flex gap-4 items-center">
+            {/* Season Selector */}
+            <select
+              value={selectedSeason}
+              onChange={(e) => setSelectedSeason(e.target.value)}
+              className="bg-black border border-gray-800 rounded-lg px-3 py-1.5 text-[10px] font-bold uppercase outline-none focus:border-teal-500 transition"
+            >
+              {seasons.map((s) => (
+                <option key={s} value={s}>
+                  {formatSeasonDisplay(s)}
+                </option>
+              ))}
+            </select>
+
             {/* Nation Selector */}
             <select
               value={selectedNation}
@@ -92,21 +123,11 @@ export default function Home() {
 
             <button
               onClick={handleFetchTable}
-              disabled={!selectedLeague}
-              className="bg-teal-600 hover:bg-teal-500 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition disabled:bg-gray-800"
+              disabled={!selectedLeague || !selectedSeason}
+              className="bg-teal-600 hover:bg-teal-500 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition"
             >
               Load
             </button>
-
-            <div className="w-px h-6 bg-gray-800 mx-2" />
-
-            {/* Admin Access */}
-            <Link
-              href="/admin"
-              className="text-[10px] font-black text-gray-500 hover:text-teal-400 uppercase tracking-widest transition"
-            >
-              Admin
-            </Link>
           </div>
         </div>
       </header>
@@ -117,14 +138,13 @@ export default function Home() {
             <LeagueTableCard
               data={leagueTable}
               seasonStats={seasonStats}
-              seasonId={currentSeason} // Dynamically passed to handle team match clicks
-              title={`${selectedNation} Standings`}
+              seasonId={selectedSeason} // Now using the state
+              title={`${selectedLeagueName} (${selectedNation}, ${displaySeason}) Standings`}
             />
           </div>
         ) : (
           <div className="h-[70vh] flex flex-col items-center justify-center text-gray-700 uppercase font-black tracking-[0.5em] text-[10px]">
-            <div className="w-12 h-1 bg-gray-800 mb-4 rounded-full" />
-            Select competition to begin analysis
+            Select criteria to begin analysis
           </div>
         )}
       </main>
