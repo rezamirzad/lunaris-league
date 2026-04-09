@@ -102,3 +102,40 @@ export interface Nation {
   confederation: "UEFA" | "CONMEBOL" | "CONCACAF" | "CAF" | "AFC" | "OFC";
   flag_url: string;
 }
+
+export interface Match {
+  id: string;
+  competitionId: string;
+  matchweek: number;
+  homeTeamId: string;
+  awayTeamId: string;
+  homeGoals: number;
+  awayGoals: number;
+  date: string;
+}
+
+export interface LeagueTableEntry {
+  teamId: string;
+  teamName: string;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  gf: number;
+  ga: number;
+  gd: number;
+  points: number;
+}
+
+export interface LeagueTableEntry {
+  teamId: string;
+  teamName: string;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  gf: number; // Goals For
+  ga: number; // Goals Against
+  gd: number; // Goal Difference
+  points: number;
+}

@@ -4,7 +4,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import { PlayerGenerator } from "@/lib/generators/PlayerGenerator";
 import { TeamGenerator } from "@/lib/generators/TeamGenerator";
-import { Player, Team } from "@/app/models";
+import { Player, Team, Match, LeagueTableEntry } from "@/app/models";
 
 const dbPath = path.join(process.cwd(), "..", "lunaris-league.db");
 
@@ -274,6 +274,93 @@ export async function getTeamAndPlayersAction(teamId: string) {
   } catch (e) {
     console.error("❌ Fetch Team Error:", e);
     return { success: false, error: "Database error" };
+  } finally {
+    db.close();
+  }
+}
+
+export async function saveMatchResultAction(
+  match: Match,
+  teamStats: any,
+  playerStats: {
+    playerId: string;
+    goals: number;
+    assists: number;
+    rating: number;
+  }[],
+) {
+  const db = new Database(dbPath);
+  const transaction = db.transaction(() => {
+    // 1. Insert Match
+    db.prepare(
+      `INSERT INTO matches (id, competition_id, matchweek, home_team_id, away_team_id, home_goals, away_goals) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      match.id,
+      match.competitionId,
+      match.matchweek,
+      match.homeTeamId,
+      match.awayTeamId,
+      match.homeGoals,
+      match.awayGoals,
+    );
+
+    // 2. Insert Player Stats (Loop through players who participated)
+    const playerStmt = db.prepare(
+      `INSERT INTO match_player_stats (match_id, player_id, goals, assists, rating) VALUES (?, ?, ?, ?, ?)`,
+    );
+    for (const p of playerStats) {
+      playerStmt.run(match.id, p.playerId, p.goals, p.assists, p.rating);
+    }
+  });
+
+  try {
+    transaction();
+    return { success: true };
+  } catch (e) {
+    console.error("Save Match Error:", e);
+    return { success: false };
+  } finally {
+    db.close();
+  }
+}
+
+export async function getLeagueTableAction(
+  competitionId: string,
+  seasonId: string, // New parameter
+): Promise<LeagueTableEntry[]> {
+  const db = new Database(dbPath);
+  try {
+    const query = `
+      SELECT 
+        t.id as teamId,
+        t.name as teamName,
+        COUNT(m.id) as played,
+        SUM(CASE 
+          WHEN (m.home_team_id = t.id AND m.home_goals > m.away_goals) OR 
+               (m.away_team_id = t.id AND m.away_goals > m.home_goals) THEN 1 ELSE 0 END) as won,
+        SUM(CASE WHEN m.home_goals = m.away_goals THEN 1 ELSE 0 END) as drawn,
+        SUM(CASE 
+          WHEN (m.home_team_id = t.id AND m.home_goals < m.away_goals) OR 
+               (m.away_team_id = t.id AND m.away_goals < m.home_goals) THEN 1 ELSE 0 END) as lost,
+        SUM(CASE WHEN m.home_team_id = t.id THEN m.home_goals ELSE m.away_goals END) as gf,
+        SUM(CASE WHEN m.home_team_id = t.id THEN m.away_goals ELSE m.home_goals END) as ga,
+        (SUM(CASE WHEN m.home_team_id = t.id THEN m.home_goals ELSE m.away_goals END) - 
+         SUM(CASE WHEN m.home_team_id = t.id THEN m.away_goals ELSE m.home_goals END)) as gd,
+        SUM(CASE 
+            WHEN (m.home_team_id = t.id AND m.home_goals > m.away_goals) OR 
+                 (m.away_team_id = t.id AND m.away_goals > m.home_goals) THEN 3
+            WHEN m.home_goals = m.away_goals THEN 1
+            ELSE 0 
+        END) as points
+      FROM teams t
+      JOIN matches m ON t.id = m.home_team_id OR t.id = m.away_team_id
+      WHERE m.competition_id = ? AND m.season_id = ?
+      GROUP BY t.id
+      ORDER BY points DESC, gd DESC, gf DESC
+    `;
+
+    // Pass both competitionId and seasonId to the query
+    return db.prepare(query).all(competitionId, seasonId) as LeagueTableEntry[];
   } finally {
     db.close();
   }

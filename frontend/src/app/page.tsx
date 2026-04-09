@@ -11,15 +11,18 @@ import {
   getLeaguesByNationAction,
   getTeamsByLeagueAction,
   getTeamLookupAction,
+  getLeagueTableAction,
 } from "./actions/dbActions";
 import { PlayerCard } from "./components/PlayerCard";
-import { Player, Team } from "./models";
+import { Player, Team, LeagueTableEntry } from "./models";
 import { FIFA_NATIONS } from "@/lib/dictionaries/nationNameData";
+import { LeagueTableCard } from "./components/LeagueTableCard";
 
 export default function Home() {
   const [dbStatus, setDbStatus] = useState<string | null>(null);
   const [squad, setSquad] = useState<Player[]>([]);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
+  const [leagueTable, setLeagueTable] = useState<LeagueTableEntry[]>([]);
 
   // Cascading dropdown lists
   const [nations, setNations] = useState<string[]>([]);
@@ -42,7 +45,7 @@ export default function Home() {
     loadNations();
   }, []);
 
-  // Sync player nation to team nation choice
+  // Sync player nation to team nation choice by default
   useEffect(() => {
     if (selectedNation) {
       setPlayerNation(selectedNation);
@@ -54,6 +57,7 @@ export default function Home() {
     setNations(data);
   };
 
+  // Effect: When nation changes, fetch its leagues and reset children
   useEffect(() => {
     if (selectedNation) {
       getLeaguesByNationAction(selectedNation).then((data) => {
@@ -61,17 +65,20 @@ export default function Home() {
         setSelectedLeague("");
         setTeams([]);
         setSelectedTeamId("");
+        setLeagueTable([]); // Clear table when switching nations
       });
     } else {
       setLeagues([]);
     }
   }, [selectedNation]);
 
+  // Effect: When league changes, fetch its teams and reset child
   useEffect(() => {
     if (selectedLeague) {
       getTeamsByLeagueAction(selectedLeague).then((data) => {
         setTeams(data);
         setSelectedTeamId("");
+        setLeagueTable([]); // Clear table when switching leagues
       });
     } else {
       setTeams([]);
@@ -80,31 +87,28 @@ export default function Home() {
 
   const refreshSquad = async () => {
     try {
-      // Execute both, but handle them safely
-      const playerData = await getSquadAction();
-      const lookupData = await getTeamLookupAction();
-
-      console.log("Players fetched:", playerData?.length); // Debug log
-
+      const [playerData, lookupData] = await Promise.all([
+        getSquadAction(),
+        getTeamLookupAction(),
+      ]);
       setSquad(playerData ?? []);
       setTeamLookup(lookupData || {});
     } catch (error) {
       console.error("Failed to refresh squad:", error);
-      setDbStatus("Database connection failed. Please check if the DB exists.");
+      setDbStatus("Database connection failed.");
     }
   };
 
-  const handleViewTeam = async (teamId: string) => {
-    setDbStatus("Loading Team...");
-    const result = await getTeamAndPlayersAction(teamId);
-
-    if (result.success) {
-      setSelectedTeam(result.team as Team);
-      setSquad(result.players ?? []);
-      setDbStatus(null);
-    } else {
-      setDbStatus("Error loading team");
+  const handleFetchTable = async () => {
+    if (!selectedLeague) {
+      setDbStatus("Please select a league first");
+      return;
     }
+    setDbStatus("Loading Standings...");
+    // Using current active season ID 's_2526' from mock data
+    const data = await getLeagueTableAction(selectedLeague, "s_2526");
+    setLeagueTable(data);
+    setDbStatus(null);
   };
 
   const handleGenerate = async () => {
@@ -134,7 +138,7 @@ export default function Home() {
           Lunaris League
         </h1>
 
-        {/* CASCADING GENERATION CONTROLS */}
+        {/* CONTROLS SECTION */}
         <div className="flex flex-col gap-6 mb-10 bg-gray-900/40 p-8 rounded-3xl border border-gray-800 shadow-2xl">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 text-left">
             {/* 1. Team Nation */}
@@ -145,7 +149,7 @@ export default function Home() {
               <select
                 value={selectedNation}
                 onChange={(e) => setSelectedNation(e.target.value)}
-                className="w-full bg-black border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:border-teal-500 outline-none transition"
+                className="w-full bg-black border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:border-teal-500 outline-none transition cursor-pointer"
               >
                 <option value="">Select Nation</option>
                 {nations.map((n: string) => (
@@ -165,7 +169,7 @@ export default function Home() {
                 disabled={!selectedNation}
                 value={selectedLeague}
                 onChange={(e) => setSelectedLeague(e.target.value)}
-                className="w-full bg-black border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:border-teal-500 outline-none transition disabled:opacity-30"
+                className="w-full bg-black border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:border-teal-500 outline-none transition disabled:opacity-30 cursor-pointer"
               >
                 <option value="">Select League</option>
                 {leagues.map((l) => (
@@ -185,7 +189,7 @@ export default function Home() {
                 disabled={!selectedLeague}
                 value={selectedTeamId}
                 onChange={(e) => setSelectedTeamId(e.target.value)}
-                className="w-full bg-black border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:border-teal-500 outline-none transition disabled:opacity-30"
+                className="w-full bg-black border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:border-teal-500 outline-none transition disabled:opacity-30 cursor-pointer"
               >
                 <option value="">Select Team</option>
                 {teams.map((t) => (
@@ -204,7 +208,7 @@ export default function Home() {
               <select
                 value={playerNation}
                 onChange={(e) => setPlayerNation(e.target.value)}
-                className="w-full bg-black border border-teal-900/50 rounded-xl px-4 py-2.5 text-sm focus:border-teal-400 outline-none transition shadow-[0_0_15px_rgba(20,184,166,0.1)]"
+                className="w-full bg-black border border-teal-900/50 rounded-xl px-4 py-2.5 text-sm focus:border-teal-400 outline-none transition shadow-[0_0_15px_rgba(20,184,166,0.1)] cursor-pointer"
               >
                 {FIFA_NATIONS.map((code: string) => (
                   <option key={code} value={code}>
@@ -213,31 +217,59 @@ export default function Home() {
                 ))}
               </select>
             </div>
-          </div>{" "}
-          {/* <--- THIS WAS MISSING IN YOUR PREVIOUS SNIPPET */}
-          <div className="flex justify-center gap-4 mt-2">
+          </div>
+
+          <div className="flex justify-center flex-wrap gap-4 mt-2">
             <button
               disabled={!selectedTeamId}
               onClick={handleGenerate}
-              className="bg-teal-600 hover:bg-teal-500 px-10 py-3 rounded-full font-bold transition shadow-lg shadow-teal-900/20 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed"
+              className="bg-teal-600 hover:bg-teal-500 px-8 py-3 rounded-full font-bold transition shadow-lg shadow-teal-900/20 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed"
             >
               + Generate Player
             </button>
+
+            <button
+              disabled={!selectedLeague}
+              onClick={handleFetchTable}
+              className="bg-gray-800 hover:bg-gray-700 border border-gray-700 px-8 py-3 rounded-full font-bold transition shadow-lg disabled:opacity-30"
+            >
+              📊 View Standings
+            </button>
+
             <button
               onClick={handleGenerateTeam}
-              className="bg-blue-600 hover:bg-blue-500 px-10 py-3 rounded-full font-bold transition shadow-lg shadow-blue-900/20"
+              className="bg-blue-600 hover:bg-blue-500 px-8 py-3 rounded-full font-bold transition shadow-lg shadow-blue-900/20"
             >
-              + Generate New Team
+              + Generate Team
             </button>
           </div>
         </div>
 
-        {/* STATUS & UTILS */}
+        {/* LEAGUE TABLE DISPLAY */}
+        {leagueTable.length > 0 && (
+          <div className="mb-10 animate-in fade-in slide-in-from-top-4 duration-500 relative">
+            <div className="absolute right-4 top-4 z-10">
+              <button
+                onClick={() => setLeagueTable([])}
+                className="text-gray-500 hover:text-white transition p-2"
+                title="Close Standings"
+              >
+                ✕
+              </button>
+            </div>
+            <LeagueTableCard
+              data={leagueTable}
+              title={`${leagues.find((l) => l.id === selectedLeague)?.name} Standings`}
+            />
+          </div>
+        )}
+
+        {/* STATUS & DIAGNOSTICS */}
         <div className="flex flex-col items-center gap-4 mb-10">
           <button
             onClick={async () => {
               const res = await checkDb();
-              setDbStatus(`DB Online: ${res.count} players found.`);
+              setDbStatus(`Database Connected: ${res.count} players`);
             }}
             className="text-xs text-gray-500 hover:text-gray-300 underline underline-offset-4 transition"
           >
@@ -250,7 +282,7 @@ export default function Home() {
           )}
         </div>
 
-        {/* TEAM CARD DISPLAY */}
+        {/* TEAM FOCUS VIEW */}
         {selectedTeam && (
           <div className="mb-10 p-8 bg-gray-900 border-l-4 border-teal-500 rounded-2xl text-left animate-in fade-in slide-in-from-bottom-4 duration-500 shadow-2xl">
             <div className="flex justify-between items-start">
@@ -259,10 +291,10 @@ export default function Home() {
                   {selectedTeam.name}
                 </h2>
                 <div className="flex gap-3 mt-2">
-                  <span className="bg-teal-900/50 text-teal-300 text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-widest border border-teal-800">
+                  <span className="bg-teal-900/50 text-teal-300 text-[10px] px-2 py-0.5 rounded font-bold uppercase border border-teal-800">
                     {selectedTeam.tactics.formation}
                   </span>
-                  <span className="bg-gray-800 text-gray-400 text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-widest border border-gray-700">
+                  <span className="bg-gray-800 text-gray-400 text-[10px] px-2 py-0.5 rounded font-bold uppercase border border-gray-700">
                     {selectedTeam.tactics.style || "Standard"}
                   </span>
                 </div>
@@ -280,7 +312,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* PLAYER SQUAD GRID */}
+        {/* SQUAD LIST */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 text-left">
           {squad.map((player) => (
             <PlayerCard
