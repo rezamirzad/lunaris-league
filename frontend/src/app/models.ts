@@ -139,3 +139,17 @@ export interface LeagueTableEntry {
   gd: number; // Goal Difference
   points: number;
 }
+
+export interface LeagueTableEntry {
+  teamId: string;
+  teamName: string;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  gf: number;
+  ga: number;
+  gd: number;
+  points: number;
+  form: ("W" | "D" | "L")[]; // Add this line
+}

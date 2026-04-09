@@ -6,12 +6,12 @@ import {
   createRegenAction,
   createTeamAction,
   getSquadAction,
-  getTeamAndPlayersAction,
   getNationalitiesAction,
   getLeaguesByNationAction,
   getTeamsByLeagueAction,
   getTeamLookupAction,
   getLeagueTableAction,
+  getSeasonStatsAction, // - Ensure this is imported
 } from "./actions/dbActions";
 import { PlayerCard } from "./components/PlayerCard";
 import { Player, Team, LeagueTableEntry } from "./models";
@@ -24,12 +24,13 @@ export default function Home() {
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [leagueTable, setLeagueTable] = useState<LeagueTableEntry[]>([]);
 
-  // Cascading dropdown lists
+  // NEW: State to store Wikipedia-style season statistics
+  const [seasonStats, setSeasonStats] = useState<any>(null);
+
   const [nations, setNations] = useState<string[]>([]);
   const [leagues, setLeagues] = useState<{ id: string; name: string }[]>([]);
   const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
 
-  // Selected values for cascading dropdowns
   const [selectedNation, setSelectedNation] = useState("");
   const [selectedLeague, setSelectedLeague] = useState("");
   const [selectedTeamId, setSelectedTeamId] = useState("");
@@ -37,7 +38,6 @@ export default function Home() {
     Record<string, { name: string; nation: string }>
   >({});
 
-  // Player nationality state
   const [playerNation, setPlayerNation] = useState("ENG");
 
   useEffect(() => {
@@ -45,7 +45,6 @@ export default function Home() {
     loadNations();
   }, []);
 
-  // Sync player nation to team nation choice by default
   useEffect(() => {
     if (selectedNation) {
       setPlayerNation(selectedNation);
@@ -53,32 +52,34 @@ export default function Home() {
   }, [selectedNation]);
 
   const loadNations = async () => {
-    const data = await getNationalitiesAction();
+    const data = await getNationalitiesAction(); //
     setNations(data);
   };
 
-  // Effect: When nation changes, fetch its leagues and reset children
   useEffect(() => {
     if (selectedNation) {
       getLeaguesByNationAction(selectedNation).then((data) => {
+        //
         setLeagues(data);
         setSelectedLeague("");
         setTeams([]);
         setSelectedTeamId("");
-        setLeagueTable([]); // Clear table when switching nations
+        setLeagueTable([]);
+        setSeasonStats(null); // Clear stats when changing nations
       });
     } else {
       setLeagues([]);
     }
   }, [selectedNation]);
 
-  // Effect: When league changes, fetch its teams and reset child
   useEffect(() => {
     if (selectedLeague) {
       getTeamsByLeagueAction(selectedLeague).then((data) => {
+        //
         setTeams(data);
         setSelectedTeamId("");
-        setLeagueTable([]); // Clear table when switching leagues
+        setLeagueTable([]);
+        setSeasonStats(null); // Clear stats when changing leagues
       });
     } else {
       setTeams([]);
@@ -88,8 +89,8 @@ export default function Home() {
   const refreshSquad = async () => {
     try {
       const [playerData, lookupData] = await Promise.all([
-        getSquadAction(),
-        getTeamLookupAction(),
+        getSquadAction(), //
+        getTeamLookupAction(), //
       ]);
       setSquad(playerData ?? []);
       setTeamLookup(lookupData || {});
@@ -99,22 +100,34 @@ export default function Home() {
     }
   };
 
+  // UPDATED: Fetches both the table and the season summary stats
   const handleFetchTable = async () => {
     if (!selectedLeague) {
       setDbStatus("Please select a league first");
       return;
     }
-    setDbStatus("Loading Standings...");
-    // Using current active season ID 's_2526' from mock data
-    const data = await getLeagueTableAction(selectedLeague, "s_2526");
-    setLeagueTable(data);
-    setDbStatus(null);
+    setDbStatus("Loading Standings & Stats...");
+
+    try {
+      // Fetch both in parallel to improve performance
+      const [tableData, statsData] = await Promise.all([
+        getLeagueTableAction(selectedLeague, "s_2526"), //
+        getSeasonStatsAction(selectedLeague, "s_2526"), //
+      ]);
+
+      setLeagueTable(tableData);
+      setSeasonStats(statsData);
+      setDbStatus(null);
+    } catch (error) {
+      console.error("Fetch Error:", error);
+      setDbStatus("Error loading league data.");
+    }
   };
 
   const handleGenerate = async () => {
     if (!playerNation || !selectedTeamId) return;
     setDbStatus("Generating...");
-    const result = await createRegenAction(playerNation, selectedTeamId);
+    const result = await createRegenAction(playerNation, selectedTeamId); //
 
     if (result.success) {
       setDbStatus(`Generated: ${result.player?.name}`);
@@ -124,7 +137,7 @@ export default function Home() {
 
   const handleGenerateTeam = async () => {
     setDbStatus("Generating Team...");
-    const result = await createTeamAction();
+    const result = await createTeamAction(); //
     if (result.success) {
       setDbStatus(`Generated Team: ${result.team?.name}`);
       loadNations();
@@ -141,7 +154,6 @@ export default function Home() {
         {/* CONTROLS SECTION */}
         <div className="flex flex-col gap-6 mb-10 bg-gray-900/40 p-8 rounded-3xl border border-gray-800 shadow-2xl">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 text-left">
-            {/* 1. Team Nation */}
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-gray-500 tracking-widest uppercase">
                 Team Nation
@@ -160,7 +172,6 @@ export default function Home() {
               </select>
             </div>
 
-            {/* 2. League Dropdown */}
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-gray-500 tracking-widest uppercase">
                 League
@@ -180,7 +191,6 @@ export default function Home() {
               </select>
             </div>
 
-            {/* 3. Target Team */}
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-gray-500 tracking-widest uppercase">
                 Target Team
@@ -200,7 +210,6 @@ export default function Home() {
               </select>
             </div>
 
-            {/* 4. Player Nationality */}
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-teal-400 tracking-widest uppercase">
                 Player Nationality
@@ -245,20 +254,24 @@ export default function Home() {
           </div>
         </div>
 
-        {/* LEAGUE TABLE DISPLAY */}
-        {leagueTable.length > 0 && (
-          <div className="mb-10 animate-in fade-in slide-in-from-top-4 duration-500 relative">
-            <div className="absolute right-4 top-4 z-10">
+        {/* LEAGUE TABLE & SEASON STATS DISPLAY */}
+        {leagueTable.length > 0 && seasonStats && (
+          <div className="mb-10 animate-in fade-in slide-in-from-top-4 duration-500 relative w-full flex flex-col items-center">
+            <div className="w-full max-w-4xl flex justify-start mb-2">
               <button
-                onClick={() => setLeagueTable([])}
-                className="text-gray-500 hover:text-white transition p-2"
-                title="Close Standings"
+                onClick={() => {
+                  setLeagueTable([]);
+                  setSeasonStats(null);
+                }}
+                className="text-gray-500 hover:text-red-500 transition p-2 text-xs flex items-center gap-1"
               >
-                ✕
+                ✕ Hide Standings
               </button>
             </div>
+
             <LeagueTableCard
               data={leagueTable}
+              seasonStats={seasonStats}
               title={`${leagues.find((l) => l.id === selectedLeague)?.name} Standings`}
             />
           </div>
@@ -268,7 +281,7 @@ export default function Home() {
         <div className="flex flex-col items-center gap-4 mb-10">
           <button
             onClick={async () => {
-              const res = await checkDb();
+              const res = await checkDb(); //
               setDbStatus(`Database Connected: ${res.count} players`);
             }}
             className="text-xs text-gray-500 hover:text-gray-300 underline underline-offset-4 transition"
