@@ -1,158 +1,158 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
 import {
   getNationalitiesAction,
   getLeaguesByNationAction,
-  createTeamAction,
+  generateTeamPreviewAction,
+  saveTeamAction,
+  getTeamCountAction,
 } from "../actions/dbActions";
+import { Team } from "../models";
 
 export default function AdminPage() {
   const [nations, setNations] = useState<string[]>([]);
   const [leagues, setLeagues] = useState<{ id: string; name: string }[]>([]);
-
   const [selectedNation, setSelectedNation] = useState("");
   const [selectedLeague, setSelectedLeague] = useState("");
-  const [creationLog, setCreationLog] = useState<any[]>([]);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [teamCount, setTeamCount] = useState<number | null>(null);
+
+  // Preview State
+  const [previewTeam, setPreviewTeam] = useState<Team | null>(null);
+  const [isPending, setIsPending] = useState(false);
 
   useEffect(() => {
     getNationalitiesAction().then(setNations);
   }, []);
 
+  // Fetch count when league is selected
   useEffect(() => {
-    if (selectedNation) {
-      getLeaguesByNationAction(selectedNation).then(setLeagues);
-      setSelectedLeague(""); // Reset league when nation changes
+    if (selectedLeague) {
+      getTeamCountAction(selectedLeague).then(setTeamCount);
+    } else {
+      setTeamCount(null);
     }
-  }, [selectedNation]);
+  }, [selectedLeague]);
 
-  const handleCreateTeam = async () => {
-    if (!selectedNation || !selectedLeague) return;
+  const handleGeneratePreview = async () => {
+    setIsPending(true);
+    const result = await generateTeamPreviewAction(
+      selectedLeague,
+      selectedNation,
+    );
+    if (result.success && result.team) {
+      setPreviewTeam(result.team);
+    }
+    setIsPending(false);
+  };
 
-    setIsGenerating(true);
-    const result = await createTeamAction(selectedLeague, selectedNation);
-    setIsGenerating(false);
-
+  const handleConfirmSave = async () => {
+    if (!previewTeam) return;
+    setIsPending(true);
+    const result = await saveTeamAction(previewTeam);
     if (result.success) {
-      // Add to the local creation log for immediate feedback
-      setCreationLog((prev) => [result.details, ...prev]);
+      setPreviewTeam(null); // Clear preview
+      const newCount = await getTeamCountAction(selectedLeague); // Refresh count
+      setTeamCount(newCount);
+      alert(result.message);
     } else {
       alert(result.error);
     }
+    setIsPending(false);
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white p-8 font-sans">
-      <div className="max-w-6xl mx-auto">
-        <header className="flex justify-between items-center mb-12">
-          <div>
-            <Link
-              href="/"
-              className="text-teal-500 text-xs font-black uppercase tracking-widest hover:text-white transition"
-            >
-              ← Dashboard
-            </Link>
-            <h1 className="text-4xl font-black italic tracking-tighter mt-2">
-              WORLD BUILDER
-            </h1>
-          </div>
-        </header>
+    <div className="p-8 max-w-2xl mx-auto space-y-6">
+      <h1 className="text-2xl font-bold">Team Management</h1>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* COLUMN 1 & 2: Configuration */}
-          <div className="lg:col-span-2 space-y-6">
-            <section className="bg-gray-900/40 p-8 rounded-3xl border border-white/5">
-              <h2 className="text-lg font-bold mb-6 flex items-center gap-2 uppercase tracking-tight">
-                <span className="text-teal-500 text-2xl">#</span> Expansion
-                Control
-              </h2>
+      {/* Selection Logic */}
+      <div className="grid grid-cols-2 gap-4">
+        <select
+          value={selectedNation}
+          onChange={(e) => setSelectedNation(e.target.value)}
+          className="bg-gray-800 p-2 rounded"
+        >
+          <option value="">Select Nation</option>
+          {nations.map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">
-                    Target Nation
-                  </label>
-                  <select
-                    value={selectedNation}
-                    onChange={(e) => setSelectedNation(e.target.value)}
-                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-teal-500 outline-none transition"
-                  >
-                    <option value="">Select Nation</option>
-                    {nations.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">
-                    Target League
-                  </label>
-                  <select
-                    disabled={!selectedNation}
-                    value={selectedLeague}
-                    onChange={(e) => setSelectedLeague(e.target.value)}
-                    className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-teal-500 outline-none disabled:opacity-20"
-                  >
-                    <option value="">Select League</option>
-                    {leagues.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <button
-                onClick={handleCreateTeam}
-                disabled={!selectedLeague || isGenerating}
-                className="w-full bg-white text-black py-4 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-teal-500 transition disabled:opacity-10"
-              >
-                {isGenerating
-                  ? "Executing Expansion..."
-                  : "Generate New Franchise"}
-              </button>
-            </section>
-          </div>
-
-          {/* COLUMN 3: Live Feedback Log */}
-          <aside className="bg-gray-900/20 p-6 rounded-3xl border border-white/5 h-fit">
-            <h3 className="text-[10px] font-black text-teal-500 uppercase tracking-[0.2em] mb-6">
-              Creation Log
-            </h3>
-            <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
-              {creationLog.length === 0 && (
-                <p className="text-gray-600 text-[11px] italic">
-                  No entities created in this session.
-                </p>
-              )}
-              {creationLog.map((item, idx) => (
-                <div
-                  key={idx}
-                  className="bg-black/40 p-4 rounded-xl border-l-2 border-teal-500 animate-in slide-in-from-right-4 duration-300"
-                >
-                  <p className="text-xs font-bold text-white uppercase">
-                    {item.name}
-                  </p>
-                  <div className="flex justify-between mt-2">
-                    <span className="text-[9px] text-gray-500 font-mono">
-                      {item.nation} / {item.league}
-                    </span>
-                    <span className="text-[9px] text-teal-500 font-mono">
-                      Rating: {item.rating}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </aside>
-        </div>
+        <select
+          value={selectedLeague}
+          onChange={(e) => {
+            setSelectedLeague(e.target.value);
+            getLeaguesByNationAction(selectedNation).then(setLeagues);
+          }}
+          className="bg-gray-800 p-2 rounded"
+        >
+          <option value="">Select League</option>
+          {leagues.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name}
+            </option>
+          ))}
+        </select>
       </div>
+
+      {/* League Stats */}
+      {teamCount !== null && (
+        <div className="bg-teal-900/20 border border-teal-500/50 p-4 rounded-lg">
+          <p className="text-sm font-bold text-teal-400">
+            Total Teams in League: {teamCount}
+          </p>
+        </div>
+      )}
+
+      {/* Action Button */}
+      {!previewTeam && (
+        <button
+          onClick={handleGeneratePreview}
+          disabled={!selectedLeague || isPending}
+          className="w-full bg-teal-600 p-3 rounded-lg font-bold disabled:opacity-50"
+        >
+          Generate Random Team
+        </button>
+      )}
+
+      {/* Approval View */}
+      {previewTeam && (
+        <div className="border border-white/10 bg-gray-900 p-6 rounded-xl animate-in fade-in slide-in-from-top-4">
+          <h2 className="text-xl font-black text-teal-400 mb-4 uppercase tracking-tighter">
+            Preview Generated Team
+          </h2>
+          <div className="space-y-2 text-sm text-gray-300">
+            <p>
+              <span className="text-gray-500">Name:</span> {previewTeam.name}
+            </p>
+            <p>
+              <span className="text-gray-500">Rating:</span>{" "}
+              {previewTeam.elo_rating}
+            </p>
+            <p>
+              <span className="text-gray-500">Tactics:</span>{" "}
+              {previewTeam.tactics.style} ({previewTeam.tactics.formation})
+            </p>
+          </div>
+
+          <div className="mt-6 flex gap-3">
+            <button
+              onClick={handleConfirmSave}
+              className="flex-1 bg-green-600 p-2 rounded-lg font-bold hover:bg-green-500 transition"
+            >
+              Approve & Save
+            </button>
+            <button
+              onClick={() => setPreviewTeam(null)}
+              className="flex-1 bg-red-900/50 text-red-400 p-2 rounded-lg font-bold hover:bg-red-900 transition"
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

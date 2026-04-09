@@ -234,6 +234,8 @@ export async function getTeamMatchesAction(teamId: string, seasonId: string) {
 /**
  * LEAGUE TABLE & SEASON STATS
  */
+// frontend/src/app/actions/dbActions.ts
+
 export async function getLeagueTableAction(
   competitionId: string,
   seasonId: string,
@@ -245,28 +247,40 @@ export async function getLeagueTableAction(
         t.id as teamId, t.name as teamName,
         COUNT(m.id) as played,
         SUM(CASE WHEN (m.home_team_id = t.id AND m.home_goals > m.away_goals) OR (m.away_team_id = t.id AND m.away_goals > m.home_goals) THEN 1 ELSE 0 END) as won,
-        SUM(CASE WHEN m.home_goals = m.away_goals THEN 1 ELSE 0 END) as drawn,
+        SUM(CASE WHEN m.home_goals = m.away_goals AND m.id IS NOT NULL THEN 1 ELSE 0 END) as drawn,
         SUM(CASE WHEN (m.home_team_id = t.id AND m.home_goals < m.away_goals) OR (m.away_team_id = t.id AND m.away_goals < m.home_goals) THEN 1 ELSE 0 END) as lost,
-        SUM(CASE WHEN m.home_team_id = t.id THEN m.home_goals ELSE m.away_goals END) as gf,
-        SUM(CASE WHEN m.home_team_id = t.id THEN m.away_goals ELSE m.home_goals END) as ga,
-        SUM(CASE WHEN (m.home_team_id = t.id AND m.home_goals > m.away_goals) OR (m.away_team_id = t.id AND m.away_goals > m.home_goals) THEN 3 WHEN m.home_goals = m.away_goals THEN 1 ELSE 0 END) as points,
+        SUM(CASE WHEN m.home_team_id = t.id THEN m.home_goals ELSE 0 END) + SUM(CASE WHEN m.away_team_id = t.id THEN m.away_goals ELSE 0 END) as gf,
+        SUM(CASE WHEN m.home_team_id = t.id THEN m.away_goals ELSE 0 END) + SUM(CASE WHEN m.away_team_id = t.id THEN m.home_goals ELSE 0 END) as ga,
+        SUM(CASE WHEN (m.home_team_id = t.id AND m.home_goals > m.away_goals) OR (m.away_team_id = t.id AND m.away_goals > m.home_goals) THEN 3 WHEN m.home_goals = m.away_goals AND m.id IS NOT NULL THEN 1 ELSE 0 END) as points,
         (SELECT group_concat(res, ',') FROM (
           SELECT CASE WHEN (m2.home_team_id = t.id AND m2.home_goals > m2.away_goals) OR (m2.away_team_id = t.id AND m2.away_goals > m2.home_goals) THEN 'W' WHEN m2.home_goals = m2.away_goals THEN 'D' ELSE 'L' END as res
           FROM matches m2 WHERE (m2.home_team_id = t.id OR m2.away_team_id = t.id) AND m2.competition_id = ? AND m2.season_id = ?
           ORDER BY m2.matchweek DESC LIMIT 5
         )) as form
       FROM teams t
-      JOIN matches m ON t.id = m.home_team_id OR t.id = m.away_team_id
-      WHERE m.competition_id = ? AND m.season_id = ?
+      -- CHANGED: Use LEFT JOIN so teams with 0 matches are included
+      LEFT JOIN matches m ON (t.id = m.home_team_id OR t.id = m.away_team_id) 
+        AND m.competition_id = ? 
+        AND m.season_id = ?
+      WHERE t.league_id = ? 
       GROUP BY t.id
-      ORDER BY points DESC, (SUM(CASE WHEN m.home_team_id = t.id THEN m.home_goals ELSE m.away_goals END) - SUM(CASE WHEN m.home_team_id = t.id THEN m.away_goals ELSE m.home_goals END)) DESC
+      ORDER BY points DESC, (gf - ga) DESC, gf DESC
     `;
+
+    // Updated parameter order to match the new JOIN/WHERE structure
     const rows = db
       .prepare(query)
-      .all(competitionId, seasonId, competitionId, seasonId) as any[];
+      .all(
+        competitionId,
+        seasonId,
+        competitionId,
+        seasonId,
+        competitionId,
+      ) as any[];
+
     return rows.map((row) => ({
       ...row,
-      gd: row.gf - row.ga,
+      gd: (row.gf || 0) - (row.ga || 0),
       form: row.form ? row.form.split(",").reverse() : [],
     })) as LeagueTableEntry[];
   } finally {
@@ -425,6 +439,82 @@ export async function updateCompetitionMetaAction(
   } catch (error) {
     console.error("❌ SQL Update Error:", error);
     return { success: false, error: "Database update failed." };
+  } finally {
+    db.close();
+  }
+}
+
+export async function getSeasonsAction() {
+  const db = new Database(dbPath);
+  try {
+    // Fetch all seasons from the 'seasons' table
+    return db
+      .prepare("SELECT id, name, is_active FROM seasons ORDER BY name DESC")
+      .all() as { id: string; name: string; is_active: number }[];
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Counts the number of teams in a specific league
+ */
+export async function getTeamCountAction(leagueId: string): Promise<number> {
+  const db = new Database(dbPath);
+  try {
+    const result = db
+      .prepare("SELECT COUNT(*) as count FROM teams WHERE league_id = ?")
+      .get(leagueId) as { count: number };
+    return result.count || 0;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * PHASE 1: Generate a team object in memory (No DB insert)
+ */
+export async function generateTeamPreviewAction(
+  leagueId: string,
+  nationalityId: string,
+) {
+  try {
+    const newTeam = TeamGenerator.generate(leagueId, nationalityId);
+    return { success: true, team: newTeam };
+  } catch (e) {
+    return { success: false, error: "Failed to generate preview." };
+  }
+}
+
+/**
+ * PHASE 2: Save the approved team to the database
+ */
+export async function saveTeamAction(team: Team) {
+  const db = new Database(dbPath);
+  try {
+    // Check for collision
+    const existing = db
+      .prepare("SELECT id FROM teams WHERE name = ?")
+      .get(team.name);
+    if (existing) return { success: false, error: "Team name already exists." };
+
+    const stmt = db.prepare(`
+      INSERT INTO teams (id, name, league_id, elo_rating, tactics_json, nationality_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      team.id,
+      team.name,
+      team.league_id,
+      team.elo_rating,
+      JSON.stringify(team.tactics),
+      team.nationality_id,
+    );
+
+    return { success: true, message: `Successfully saved ${team.name}` };
+  } catch (e) {
+    return { success: false, error: "Database save failed." };
   } finally {
     db.close();
   }
