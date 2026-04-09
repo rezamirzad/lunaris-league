@@ -1,6 +1,7 @@
 import { Player, PlayerAttributes } from "@/app/models";
+// Import the dictionary we created
+import { PLAYER_NAME_DICTIONARY } from "../dictionaries/playerNameData";
 
-// Archetypes define which stats are "Primary" for a position
 const POSITION_CONFIG: Record<
   string,
   { primary: (keyof PlayerAttributes)[]; secondary: (keyof PlayerAttributes)[] }
@@ -11,38 +12,27 @@ const POSITION_CONFIG: Record<
     primary: ["passing", "dribbling"],
     secondary: ["shooting", "defending"],
   },
-  GK: { primary: ["physical", "defending"], secondary: ["passing"] }, // Using defending as a proxy for reflexes
+  GK: { primary: ["physical", "defending"], secondary: ["passing"] },
 };
 
 export class PlayerGenerator {
-  private static firstNames = [
-    "Lamine",
-    "Erling",
-    "Jude",
-    "Kylian",
-    "Florian",
-    "Kobbie",
-    "Pau",
-    "Bukayo",
-  ];
-  private static lastNames = [
-    "Yamal",
-    "Haaland",
-    "Bellingham",
-    "Mbappé",
-    "Wirtz",
-    "Mainoo",
-    "Cubarsí",
-    "Saka",
-  ];
-
   static generate(
     position: Player["position"],
-    nationality_id: string, // ISO code string as per your DB
+    nationality_id: string,
     teamId: string,
     targetOvr: number,
   ): Player {
-    const name = `${this.firstNames[Math.floor(Math.random() * this.firstNames.length)]} ${this.lastNames[Math.floor(Math.random() * this.lastNames.length)]}`;
+    // 1. Get the correct name pool based on nationality_id
+    const pool =
+      PLAYER_NAME_DICTIONARY[nationality_id] || PLAYER_NAME_DICTIONARY.DEFAULT;
+
+    // 2. Pick names specifically from that pool
+    const firstName =
+      pool.firstNames[Math.floor(Math.random() * pool.firstNames.length)];
+    const lastName =
+      pool.lastNames[Math.floor(Math.random() * pool.lastNames.length)];
+
+    const name = `${firstName} ${lastName}`;
 
     return {
       id: `p_${Math.random().toString(36).substring(2, 9)}`,
@@ -51,8 +41,8 @@ export class PlayerGenerator {
       position,
       ovr: targetOvr,
       currentElo: 1200,
-      age: Math.floor(Math.random() * (23 - 17 + 1)) + 17, // Generates youth/wonderkids
-      nationality_id: nationality_id as any, // Cast to any if your interface strictly requires number
+      age: Math.floor(Math.random() * (23 - 17 + 1)) + 17,
+      nationality_id: nationality_id as any,
       attributes: this.generateAttributes(position, targetOvr),
       history: [],
     };
@@ -83,7 +73,6 @@ export class PlayerGenerator {
       playstylePlus: "",
     };
 
-    // Assign basic playstyle logic
     if (pos === "ST") attributes.playstylePlus = "Power Shot+";
     if (pos === "CB") attributes.playstylePlus = "Anticipate+";
 

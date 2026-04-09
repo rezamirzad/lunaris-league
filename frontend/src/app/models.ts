@@ -46,9 +46,13 @@ export interface Player {
 }
 
 export interface TeamTactics {
-  formation: string;
-  mentality: "Attacking" | "Balanced" | "Defensive";
-  // Add more tactical settings as needed
+  formation?: string;
+  style?: string;
+  width?: number;
+  depth?: number;
+  buildUp?: string;
+  chanceCreation?: string;
+  mentality?: string; // Optional if you still want to keep it
 }
 
 export interface Team {

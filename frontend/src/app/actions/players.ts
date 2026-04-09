@@ -1,7 +1,7 @@
 "use server";
 
 import Database from "better-sqlite3";
-import { PlayerGenerator } from "@/lib/generators/playergenerator";
+import { PlayerGenerator } from "@/lib/generators/PlayerGenerator";
 import { revalidatePath } from "next/cache";
 
 export async function generateRandomPlayer() {
