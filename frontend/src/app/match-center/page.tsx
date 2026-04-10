@@ -6,9 +6,11 @@ import {
   getNationalitiesAction,
   getLeaguesByNationAction,
 } from "../actions/dbActions";
-import { getSimDataAction, simulateMatchAction } from "../actions/simActions";
+import {
+  getSimDataAction,
+  simulateFullMatchAction,
+} from "../actions/simActions";
 import Link from "next/link";
-import { TacticalPitch } from "../components/TacticalPitch";
 
 export default function MatchCenter() {
   const [nations, setNations] = useState<string[]>([]);
@@ -50,39 +52,35 @@ export default function MatchCenter() {
 
   const handleSimulate = async () => {
     setIsSimulating(true);
+    // Short artificial delay for "calculating" feel
     setTimeout(async () => {
-      const res = await simulateMatchAction(matchData.home, matchData.away);
+      const res = await simulateFullMatchAction(matchData.home, matchData.away);
       setResult(res);
       setIsSimulating(false);
-    }, 1500);
+    }, 600);
   };
 
   return (
     <div className="min-h-screen bg-black text-white p-8">
-      <header className="max-w-7xl mx-auto flex justify-between items-center border-b border-white/5 pb-6 mb-12">
-        <div>
-          <h1 className="text-2xl font-black italic text-teal-500 uppercase tracking-tighter">
-            Match Center
-          </h1>
-          <p className="text-[9px] text-gray-500 uppercase tracking-[0.3em] font-bold">
-            Tactical Simulation Engine
-          </p>
-        </div>
+      <header className="max-w-6xl mx-auto flex justify-between items-center border-b border-white/5 pb-6 mb-12">
+        <h1 className="text-2xl font-black italic text-teal-500 uppercase tracking-tighter">
+          Match Center
+        </h1>
         <Link
           href="/"
-          className="text-[10px] font-black text-gray-500 hover:text-white uppercase tracking-widest transition"
+          className="text-[10px] font-black text-gray-500 hover:text-white uppercase tracking-widest"
         >
           Return Home
         </Link>
       </header>
 
-      <main className="max-w-7xl mx-auto space-y-8">
+      <main className="max-w-6xl mx-auto space-y-6">
         {/* SELECTORS */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-gray-900/40 p-4 rounded-2xl border border-white/5 shadow-2xl">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-gray-900/40 p-4 rounded-2xl border border-white/5">
           <select
             value={selectedNation}
             onChange={(e) => setSelectedNation(e.target.value)}
-            className="bg-black border border-white/10 p-3 rounded-xl text-[10px] font-bold uppercase outline-none focus:border-teal-500 transition"
+            className="bg-black border border-white/10 p-3 rounded-xl text-[10px] font-bold uppercase outline-none focus:border-teal-500"
           >
             <option value="">Nation</option>
             {nations.map((n) => (
@@ -135,51 +133,32 @@ export default function MatchCenter() {
         <button
           onClick={handlePrepareMatch}
           disabled={!homeId || !awayId || homeId === awayId}
-          className="w-full bg-white text-black font-black uppercase text-[10px] py-4 rounded-xl hover:bg-teal-500 transition disabled:opacity-20 shadow-lg"
+          className="w-full bg-white text-black font-black uppercase text-[10px] py-4 rounded-xl hover:bg-teal-500 transition disabled:opacity-20"
         >
-          Prepare Match Context
+          Prepare Match
         </button>
 
         {matchData && (
-          <div className="space-y-8 animate-in fade-in zoom-in-95 duration-500">
-            {/* 1. MATCH BOARD & TIMELINE */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 items-stretch bg-gray-900 border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
-              {/* Home Identity */}
-              <div className="flex flex-col">
-                <div className="p-12 text-center flex-1 flex flex-col justify-center space-y-2">
-                  <span className="text-[10px] font-black text-teal-500 uppercase tracking-[0.3em]">
-                    Home
-                  </span>
-                  <h2 className="text-3xl font-black uppercase italic tracking-tighter leading-none">
-                    {matchData.home.name}
-                  </h2>
-                </div>
-                <div className="bg-black/20 border-t border-white/5 py-4 px-6 flex justify-around">
-                  <div className="text-center">
-                    <span className="text-[7px] text-gray-500 uppercase font-black block tracking-widest">
-                      ELO Rating
-                    </span>
-                    <span className="text-sm font-black text-white tabular-nums">
-                      {matchData.home.elo_rating}
-                    </span>
-                  </div>
-                  <div className="w-px h-6 bg-white/5" />
-                  <div className="text-center">
-                    <span className="text-[7px] text-gray-500 uppercase font-black block tracking-widest">
-                      Squad OVR
-                    </span>
-                    <span className="text-sm font-black text-white tabular-nums">
-                      {matchData.home.avgOvr}
-                    </span>
-                  </div>
-                </div>
+          <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
+            {/* SCOREBOARD & STATS */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 bg-gray-900 border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
+              <div className="p-10 text-center flex flex-col justify-center border-b lg:border-b-0 lg:border-r border-white/5">
+                <span className="text-[10px] font-black text-teal-500 uppercase tracking-widest mb-2">
+                  Home
+                </span>
+                <h2 className="text-2xl font-black uppercase italic">
+                  {matchData.home.name}
+                </h2>
+                <p className="text-xs text-gray-500 mt-2">
+                  ELO: {matchData.home.elo_rating} | OVR:{" "}
+                  {matchData.home.avgOvr}
+                </p>
               </div>
 
-              {/* CENTER COLUMN: SCORE & TIMELINE */}
-              <div className="bg-black/60 min-h-[450px] flex flex-col items-center py-10 border-x border-white/10">
+              <div className="bg-black/40 p-10 flex flex-col items-center justify-center">
                 {result ? (
                   <>
-                    <div className="text-7xl font-black italic tracking-tighter flex gap-8 animate-in bounce-in mb-10">
+                    <div className="text-6xl font-black italic flex gap-6 mb-6 animate-in bounce-in">
                       <span
                         className={
                           result.homeGoals > result.awayGoals
@@ -200,136 +179,165 @@ export default function MatchCenter() {
                         {result.awayGoals}
                       </span>
                     </div>
-
-                    <div className="w-full px-4 space-y-3 overflow-y-auto custom-scrollbar flex-1">
-                      {result.events.map((event: any, i: number) => (
-                        <div
-                          key={i}
-                          className="flex items-center gap-3 text-[10px] font-bold animate-in fade-in slide-in-from-top-2"
-                          style={{ animationDelay: `${i * 100}ms` }}
-                        >
-                          <div
-                            className={`flex items-center gap-2 flex-1 ${!event.isHome ? "flex-row-reverse text-right" : "text-left"}`}
-                          >
-                            <span className="text-teal-500 tabular-nums w-6">
-                              {event.minute}&apos;
-                            </span>
-                            <span className="text-white uppercase truncate max-w-[110px]">
-                              {event.playerName || event.scorerName}
-                            </span>
-                            <span className="text-xs">
-                              {event.type === "GOAL" && "⚽"}
-                              {event.type === "YELLOW" && "🟨"}
-                              {event.type === "RED" && "🟥"}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-6 pt-4 w-full text-center border-t border-white/5 opacity-40">
-                      <span className="text-[8px] font-black uppercase tracking-[0.5em]">
-                        Full Time
-                      </span>
+                    {/* QUICK STATS SUMMARY */}
+                    <div className="w-full grid grid-cols-3 text-[9px] font-black uppercase tracking-tighter text-gray-400">
+                      <div className="text-right space-y-1">
+                        <p>
+                          {result.stats.home.shots} (
+                          {result.stats.home.onTarget})
+                        </p>
+                        <p>{result.stats.home.corners}</p>
+                        <p>{result.stats.home.fouls}</p>
+                      </div>
+                      <div className="text-center space-y-1 text-gray-600 px-2">
+                        <p>Shots (OT)</p>
+                        <p>Corners</p>
+                        <p>Fouls</p>
+                      </div>
+                      <div className="text-left space-y-1">
+                        <p>
+                          ({result.stats.away.onTarget}){" "}
+                          {result.stats.away.shots}
+                        </p>
+                        <p>{result.stats.away.corners}</p>
+                        <p>{result.stats.away.fouls}</p>
+                      </div>
                     </div>
                   </>
                 ) : (
-                  <div className="flex flex-col items-center justify-center h-full opacity-10">
-                    <div className="text-6xl font-black italic">VS</div>
+                  <div className="text-4xl font-black italic opacity-10 uppercase tracking-tighter">
+                    Ready
                   </div>
                 )}
               </div>
 
-              {/* Away Identity */}
-              <div className="flex flex-col">
-                <div className="p-12 text-center flex-1 flex flex-col justify-center space-y-2">
-                  <span className="text-[10px] font-black text-teal-500 uppercase tracking-[0.3em]">
-                    Away
-                  </span>
-                  <h2 className="text-3xl font-black uppercase italic tracking-tighter leading-none">
-                    {matchData.away.name}
-                  </h2>
-                </div>
-                <div className="bg-black/20 border-t border-white/5 py-4 px-6 flex justify-around">
-                  <div className="text-center">
-                    <span className="text-[7px] text-gray-500 uppercase font-black block tracking-widest">
-                      ELO Rating
-                    </span>
-                    <span className="text-sm font-black text-white tabular-nums">
-                      {matchData.away.elo_rating}
-                    </span>
-                  </div>
-                  <div className="w-px h-6 bg-white/5" />
-                  <div className="text-center">
-                    <span className="text-[7px] text-gray-500 uppercase font-black block tracking-widest">
-                      Squad OVR
-                    </span>
-                    <span className="text-sm font-black text-white tabular-nums">
-                      {matchData.away.avgOvr}
-                    </span>
-                  </div>
-                </div>
+              <div className="p-10 text-center flex flex-col justify-center border-t lg:border-t-0 lg:border-l border-white/5">
+                <span className="text-[10px] font-black text-teal-500 uppercase tracking-widest mb-2">
+                  Away
+                </span>
+                <h2 className="text-2xl font-black uppercase italic">
+                  {matchData.away.name}
+                </h2>
+                <p className="text-xs text-gray-500 mt-2">
+                  ELO: {matchData.away.elo_rating} | OVR:{" "}
+                  {matchData.away.avgOvr}
+                </p>
               </div>
             </div>
 
-            {/* 2. TACTICAL PITCH VISUALIZATION */}
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-              <TacticalPitch
-                teamName={matchData.home.name}
-                formation={matchData.home.formation}
-                players={matchData.home.starters}
-                resultEvents={result?.events}
-                isHome={true}
-              />
-              <TacticalPitch
-                teamName={matchData.away.name}
-                formation={matchData.away.formation}
-                players={matchData.away.starters}
-                resultEvents={result?.events}
-                isHome={false}
-              />
-            </div>
+            {/* EVENT TIMELINE - STRICT VERTICAL */}
+            {result && (
+              <div className="bg-gray-900/50 border border-white/5 rounded-2xl p-6 max-h-[400px] overflow-y-auto custom-scrollbar">
+                <div className="flex flex-col gap-1">
+                  {result.events.map((event: any, i: number) => (
+                    <div
+                      key={i}
+                      className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 py-2 border-b border-white/[0.03] last:border-0 animate-in fade-in slide-in-from-top-1"
+                      style={{ animationDelay: `${i * 50}ms` }}
+                    >
+                      {/* Home Side Event */}
+                      <div className="text-right">
+                        {event.isHome && (
+                          <div className="flex items-center justify-end gap-3">
+                            <span className="text-[10px] text-white uppercase font-bold truncate">
+                              {event.playerName || event.scorerName}
+                            </span>
+                            <span className="text-[14px] leading-none flex items-center">
+                              {event.type === "GOAL" ? (
+                                <span className="relative inline-flex">
+                                  ⚽
+                                  {event.isPenalty && (
+                                    <span className="absolute -top-1.5 -right-1 text-[7px] font-black bg-black text-teal-400 border border-teal-400/30 rounded-full w-3 h-3 flex items-center justify-center tracking-tighter shadow-sm">
+                                      P
+                                    </span>
+                                  )}
+                                </span>
+                              ) : event.type === "YELLOW" ? (
+                                "🟨"
+                              ) : (
+                                "🟥"
+                              )}
+                            </span>
+                          </div>
+                        )}
+                      </div>
 
-            {/* 3. ROSTER DETAILS */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                      {/* Minute (Center Pillar) */}
+                      <div className="flex flex-col items-center">
+                        <div className="w-px h-2 bg-white/10" />
+                        <span className="text-[12px] font-black text-teal-500 bg-black px-2 py-0.5 rounded border border-white/10 tabular-nums">
+                          {event.minute}&apos;
+                        </span>
+                        <div className="w-px h-2 bg-white/10" />
+                      </div>
+
+                      {/* Away Side Event */}
+                      <div className="text-left">
+                        {!event.isHome && (
+                          <div className="flex items-center justify-start gap-3">
+                            <span className="text-[14px] leading-none flex items-center">
+                              {event.type === "GOAL" ? (
+                                <span className="relative inline-flex">
+                                  ⚽
+                                  {event.isPenalty && (
+                                    <span className="absolute -top-1.5 -right-1 text-[7px] font-black bg-black text-teal-400 border border-teal-400/30 rounded-full w-3 h-3 flex items-center justify-center tracking-tighter shadow-sm">
+                                      P
+                                    </span>
+                                  )}
+                                </span>
+                              ) : event.type === "YELLOW" ? (
+                                "🟨"
+                              ) : (
+                                "🟥"
+                              )}
+                            </span>
+                            <span className="text-[10px] text-white uppercase font-bold truncate">
+                              {event.playerName || event.scorerName}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ROSTERS SECTION */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {[matchData.home, matchData.away].map((team, idx) => (
                 <div
                   key={team.id}
-                  className="bg-gray-900/30 border border-white/5 rounded-3xl p-8 relative overflow-hidden shadow-xl"
+                  className="bg-gray-900/30 border border-white/5 rounded-2xl p-6 relative overflow-hidden"
                 >
-                  <div className="absolute -right-4 -bottom-4 text-8xl font-black text-white/[0.02] italic pointer-events-none uppercase">
+                  {/* Formation Watermark */}
+                  <div className="absolute -right-4 -bottom-4 text-7xl font-black text-white/[0.02] italic pointer-events-none uppercase">
                     {team.formation}
                   </div>
-                  <h3 className="text-xs font-black uppercase tracking-[0.3em] text-gray-500 mb-8 flex items-center gap-4">
-                    {idx === 0 ? "Home Roster" : "Away Roster"}
+
+                  <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-6 flex items-center gap-3">
+                    {idx === 0 ? "Home Squad" : "Away Squad"}
                     <div className="h-px flex-1 bg-white/5" />
                   </h3>
-                  <div className="space-y-2">
+
+                  {/* STARTERS */}
+                  <div className="space-y-2 mb-8">
                     {team.starters.map((p: any) => {
-                      const pEvents =
-                        result?.events.filter(
-                          (e: any) => e.playerId === p.id,
-                        ) || [];
-                      const goals = pEvents.filter(
-                        (e: any) => e.type === "GOAL",
-                      ).length;
-                      const hasYellow = pEvents.some(
-                        (e: any) => e.type === "YELLOW",
-                      );
-                      const isSentOff = pEvents.some(
-                        (e: any) => e.type === "RED",
-                      );
+                      // 1. Get player events and sort them by minute for chronological icons
+                      const pEvents = (result?.events || [])
+                        .filter((e: any) => e.playerId === p.id)
+                        .sort((a: any, b: any) => a.minute - b.minute);
+
+                      const isRed = pEvents.some((e: any) => e.type === "RED");
 
                       return (
                         <div
                           key={p.id}
-                          className={`flex justify-between items-center py-1 transition-all duration-500 ${
-                            isSentOff ? "opacity-40 grayscale" : "group"
-                          }`}
+                          className={`flex justify-between items-center text-[11px] group transition-all ${isRed ? "opacity-100" : ""}`}
                         >
-                          <div className="flex items-center gap-4">
-                            {/* Position Badge - Now color coded like the bench */}
-                            <div
-                              className={`w-8 text-[9px] font-black px-1 py-1 rounded-sm text-center border border-white/5 transition-colors ${
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={`w-7 text-[8px] font-bold py-0.5 rounded text-center border border-white/5 ${
                                 p.position === "GK"
                                   ? "bg-orange-500/10 text-orange-500"
                                   : ["ST", "LW", "RW", "CF"].includes(
@@ -344,98 +352,89 @@ export default function MatchCenter() {
                               }`}
                             >
                               {p.position}
-                            </div>
+                            </span>
+                            <span
+                              className={`font-bold uppercase tracking-tight ${isRed ? "line-through text-red-900" : "text-gray-300 group-hover:text-white"}`}
+                            >
+                              {p.name}
+                            </span>
 
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`text-xs font-bold uppercase tracking-tight transition-colors ${
-                                  goals > 0
-                                    ? "text-teal-400"
-                                    : isSentOff
-                                      ? "line-through text-red-900"
-                                      : "text-gray-300 group-hover:text-white"
-                                }`}
-                              >
-                                {p.name}
-                              </span>
-                              <div className="flex items-center gap-1.5 ml-1">
-                                {Array.from({ length: goals }).map((_, i) => (
-                                  <span key={i} className="text-[10px]">
-                                    ⚽
-                                  </span>
-                                ))}
-                                {hasYellow && (
-                                  <span className="text-[10px]">🟨</span>
-                                )}
-                                {isSentOff && (
-                                  <span className="text-[10px] text-red-500">
-                                    🟥
-                                  </span>
-                                )}
-                              </div>
+                            {/* CHRONOLOGICAL ICONS */}
+                            <div className="flex gap-1 items-center">
+                              {pEvents.map((e: any, ei: number) => (
+                                <span
+                                  key={ei}
+                                  className="text-[10px] animate-in zoom-in"
+                                  title={`${e.minute}'`}
+                                >
+                                  {e.type === "GOAL"
+                                    ? "⚽"
+                                    : e.type === "YELLOW"
+                                      ? "🟨"
+                                      : "🟥"}
+                                </span>
+                              ))}
                             </div>
                           </div>
-                          <span
-                            className={`text-xs font-black tabular-nums transition-opacity ${
-                              goals > 0
-                                ? "text-teal-400"
-                                : "text-white opacity-40 group-hover:opacity-100"
-                            }`}
-                          >
+                          <span className="font-black text-white/20 group-hover:text-white/60 tabular-nums">
                             {p.ovr}
                           </span>
                         </div>
                       );
                     })}
                   </div>
-                  {/* Bench */}
-                  <div className="mt-8 pt-6 border-t border-white/5 space-y-1.5 relative z-10">
-                    <span className="text-[8px] font-black text-gray-500 uppercase tracking-[0.2em] block mb-2">
-                      Substitutes
+
+                  {/* SUBSTITUTES (7 Players) */}
+                  <div className="pt-6 border-t border-white/5 space-y-1.5">
+                    <span className="text-[8px] font-black text-gray-600 uppercase tracking-[0.2em] block mb-3">
+                      Bench
                     </span>
                     {team.subs.map((p: any) => {
-                      const pEvents =
-                        result?.events.filter(
-                          (e: any) => e.playerId === p.id,
-                        ) || [];
-                      const goals = pEvents.filter(
-                        (e: any) => e.type === "GOAL",
-                      ).length;
-                      const hasYellow = pEvents.some(
-                        (e: any) => e.type === "YELLOW",
-                      );
-                      const isSentOff = pEvents.some(
-                        (e: any) => e.type === "RED",
-                      );
+                      const pEvents = (result?.events || [])
+                        .filter((e: any) => e.playerId === p.id)
+                        .sort((a: any, b: any) => a.minute - b.minute);
+
+                      const isRed = pEvents.some((e: any) => e.type === "RED");
+
                       return (
                         <div
                           key={p.id}
-                          className={`flex justify-between items-center py-0.5 opacity-60 hover:opacity-100 transition-all ${isSentOff ? "grayscale opacity-20" : ""}`}
+                          className={`flex justify-between items-center text-[10px] opacity-50 hover:opacity-100 transition-all ${isRed ? "grayscale opacity-20" : ""}`}
                         >
                           <div className="flex items-center gap-3">
-                            <div
-                              className={`w-8 text-[9px] font-black px-1 py-0.5 rounded-sm text-center ${p.position === "GK" ? "bg-orange-500/10 text-orange-500" : ["ST", "LW", "RW", "CF"].includes(p.position) ? "bg-red-500/10 text-red-500" : ["CM", "CDM", "CAM", "LM", "RM"].includes(p.position) ? "bg-green-500/10 text-green-500" : "bg-blue-500/10 text-blue-500"}`}
+                            <span
+                              className={`w-7 text-[7px] font-bold py-0.5 rounded text-center ${
+                                p.position === "GK"
+                                  ? "bg-orange-500/10 text-orange-500"
+                                  : ["ST", "LW", "RW"].includes(p.position)
+                                    ? "bg-red-500/10 text-red-500"
+                                    : ["CM", "CDM", "CAM"].includes(p.position)
+                                      ? "bg-green-500/10 text-green-500"
+                                      : "bg-blue-500/10 text-blue-500"
+                              }`}
                             >
                               {p.position}
-                            </div>
+                            </span>
                             <span
-                              className={`text-[11px] font-bold uppercase tracking-tight ${goals > 0 ? "text-teal-400" : "text-gray-400"}`}
+                              className={`font-bold uppercase ${isRed ? "line-through" : ""}`}
                             >
                               {p.name}
                             </span>
-                            {goals > 0 && (
-                              <span className="text-[10px]">⚽</span>
-                            )}
-                            {hasYellow && (
-                              <span className="text-[10px]">🟨</span>
-                            )}
-                            {isSentOff && (
-                              <span className="text-[10px]">🟥</span>
-                            )}
+
+                            {/* CHRONOLOGICAL ICONS FOR SUBS */}
+                            <div className="flex gap-1">
+                              {pEvents.map((e: any, ei: number) => (
+                                <span key={ei}>
+                                  {e.type === "GOAL"
+                                    ? "⚽"
+                                    : e.type === "YELLOW"
+                                      ? "🟨"
+                                      : "🟥"}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                          <span className="text-[11px] font-black tabular-nums text-gray-500">
-                            {p.ovr}
-                          </span>
+                          <span className="font-black opacity-30">{p.ovr}</span>
                         </div>
                       );
                     })}
@@ -444,19 +443,13 @@ export default function MatchCenter() {
               ))}
             </div>
 
-            {/* Sim Button (Only visible after preparing and before results) */}
             {!result && (
               <button
                 onClick={handleSimulate}
                 disabled={isSimulating}
-                className="w-full mt-8 bg-teal-600 hover:bg-teal-500 py-6 rounded-2xl font-black uppercase tracking-[0.5em] text-xs transition-all shadow-xl shadow-teal-500/20 relative overflow-hidden"
+                className="w-full bg-teal-600 hover:bg-teal-500 py-6 rounded-2xl font-black uppercase tracking-[0.4em] text-xs transition-all"
               >
-                {isSimulating
-                  ? "Processing Tactical Engine..."
-                  : "Execute Simulation"}
-                {isSimulating && (
-                  <div className="absolute bottom-0 left-0 h-1 bg-white animate-progress-fast w-full" />
-                )}
+                {isSimulating ? "Simulating..." : "Kick Off"}
               </button>
             )}
           </div>

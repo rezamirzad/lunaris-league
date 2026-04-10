@@ -306,3 +306,160 @@ export async function simulateMatchAction(home: any, away: any) {
     attendance: Math.floor(Math.random() * 20000) + 10000,
   };
 }
+
+// src/app/actions/simActions.ts
+
+export async function simulateFullMatchAction(home: any, away: any) {
+  const stats = {
+    home: { shots: 0, onTarget: 0, corners: 0, fouls: 0, offsides: 0, pk: 0 },
+    away: { shots: 0, onTarget: 0, corners: 0, fouls: 0, offsides: 0, pk: 0 },
+  };
+
+  let homeGoals = 0;
+  let awayGoals = 0;
+  const events: any[] = [];
+  const sentOffIds: string[] = [];
+
+  // Calculate base chances per minute (scaled to 90 mins)
+  const homeWeight = home.elo_rating * 0.6 + home.avgOvr * 15 + 50;
+  const awayWeight = away.elo_rating * 0.6 + away.avgOvr * 15;
+  const totalWeight = homeWeight + awayWeight;
+
+  for (let minute = 1; minute <= 90; minute++) {
+    const isHomeTurn = Math.random() < homeWeight / totalWeight;
+    const activeTeam = isHomeTurn ? home : away;
+    const oppTeam = isHomeTurn ? away : home;
+    const activeStats = isHomeTurn ? stats.home : stats.away;
+    const activeIsHome = isHomeTurn;
+
+    const roll = Math.random();
+
+    // 1. Roll for FOUL (Yellow/Red)
+    if (roll < 0.08) {
+      activeStats.fouls++;
+      if (Math.random() < 0.15) {
+        // Card chance
+        const player = activeTeam.starters[Math.floor(Math.random() * 11)];
+        const isRed = Math.random() < 0.1;
+        if (isRed) sentOffIds.push(player.id);
+        events.push({
+          type: isRed ? "RED" : "YELLOW",
+          minute,
+          playerName: player.name,
+          playerId: player.id,
+          isHome: activeIsHome,
+        });
+      }
+      // Penalty Kick chance from a foul
+      if (Math.random() < 0.05) {
+        activeStats.pk++;
+        if (Math.random() < 0.75) {
+          // 1. Filter out sent-off players
+          const availablePlayers = activeTeam.starters.filter(
+            (p: any) => !sentOffIds.includes(p.id),
+          );
+
+          // 2. Score players based on attributes
+          // Weights: 80% Shooting, 20% Passing.
+          // Penalty for GKs: -50 points (unless they have insane Sho/Pas)
+          const scoredPlayers = availablePlayers.map((p: any) => {
+            const attrs = JSON.parse(p.attributes_json || "{}");
+
+            let penAbility = (attrs.sho || 0) * 0.8 + (attrs.pas || 0) * 0.2;
+
+            // Heavily discourage GKs from taking pens
+            if (p.position === "GK") penAbility -= 50;
+
+            return { ...p, penAbility };
+          });
+
+          // 3. Sort by our custom Pen Ability
+          scoredPlayers.sort((a: any, b: any) => b.penAbility - a.penAbility);
+          const penScorer = scoredPlayers[0];
+
+          if (activeIsHome) homeGoals++;
+          else awayGoals++;
+
+          events.push({
+            type: "GOAL",
+            minute,
+            scorerName: penScorer.name,
+            playerId: penScorer.id,
+            isHome: activeIsHome,
+            isPenalty: true,
+          });
+        }
+      }
+    }
+
+    // 2. Roll for CORNER
+    else if (roll < 0.15) {
+      activeStats.corners++;
+    }
+
+    // 3. Roll for OFFSIDE
+    else if (roll < 0.18) {
+      activeStats.offsides++;
+    }
+
+    // 4. Roll for SHOT
+    else if (roll < 0.25) {
+      activeStats.shots++;
+      const onTargetRoll = Math.random();
+
+      if (onTargetRoll < 0.35) {
+        activeStats.onTarget++;
+
+        if (Math.random() < 0.12) {
+          // --- GOALKEEPER DESPERATION LOGIC ---
+          const isDesperateMinute = minute >= 85;
+          const isLosingByOne = activeIsHome
+            ? awayGoals - homeGoals === 1
+            : homeGoals - awayGoals === 1;
+
+          const canGkScore = isDesperateMinute && isLosingByOne;
+
+          const availableStarters = activeTeam.starters.filter((p: any) => {
+            const isSentOff = sentOffIds.includes(p.id);
+            // Exclude GK unless it's "Desperation Time"
+            const isExcludedGk = p.position === "GK" && !canGkScore;
+            return !isSentOff && !isExcludedGk;
+          });
+
+          // Weight selection: Strikers/Mids still much more likely even if GK is up
+          const weights = availableStarters.map((p: any) => {
+            if (["ST", "CF", "LW", "RW"].includes(p.position)) return 10;
+            if (["CM", "CAM", "LM", "RM"].includes(p.position)) return 5;
+            if (p.position === "GK") return 0.5; // Very low chance even if present
+            return 2; // Defenders
+          });
+
+          const totalW = weights.reduce((acc: number, w: number) => acc + w, 0);
+          let r = Math.random() * totalW;
+          let scorer = availableStarters[0];
+
+          for (let j = 0; j < availableStarters.length; j++) {
+            r -= weights[j];
+            if (r <= 0) {
+              scorer = availableStarters[j];
+              break;
+            }
+          }
+
+          if (activeIsHome) homeGoals++;
+          else awayGoals++;
+
+          events.push({
+            type: "GOAL",
+            minute,
+            scorerName: scorer.name,
+            playerId: scorer.id,
+            isHome: activeIsHome,
+          });
+        }
+      }
+    }
+  }
+
+  return { homeGoals, awayGoals, events, stats, attendance: 25000 };
+}
